@@ -50,6 +50,9 @@ function buildGroups(records: RecordSource, search: string): Group[] {
 
 export function RecordList({ records, selectedId, onPreview, onPin }: Props) {
   const [search, setSearch] = useState('');
+  // The user's manual collapse state. Persists across selection
+  // changes, but is overridden in render by `effectivelyCollapsed` so
+  // the group containing the active selection always shows expanded.
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
 
   const groups = useMemo(() => buildGroups(records, search), [records, search]);
@@ -57,6 +60,18 @@ export function RecordList({ records, selectedId, onPreview, onPin }: Props) {
     () => groups.reduce((n, g) => n + g.ids.length, 0),
     [groups],
   );
+
+  // Derive the actual collapse set: never collapse the group containing
+  // the active selection, even if the user previously collapsed it.
+  // Replaces a setState-in-effect that auto-expanded on selection.
+  const effectivelyCollapsed = useMemo(() => {
+    if (selectedId == null) return collapsed;
+    const typename = records[selectedId]?.__typename;
+    if (typename == null || !collapsed.has(typename)) return collapsed;
+    const next = new Set(collapsed);
+    next.delete(typename);
+    return next;
+  }, [collapsed, selectedId, records]);
 
   const rowRefs = useRef(new Map<string, HTMLButtonElement | null>());
   const registerRow = useCallback(
@@ -67,25 +82,16 @@ export function RecordList({ records, selectedId, onPreview, onPin }: Props) {
     [],
   );
 
-  // When the active tab changes (often via a ref-chip click), make sure
-  // the corresponding row is visible: expand its group if collapsed,
-  // then scrollIntoView. The expand step takes a render, so the effect
-  // re-runs after `collapsed` updates and the row ref becomes available.
+  // Scroll the active row into view whenever the selection changes
+  // (commonly from a ref-chip click). No setState in the effect: the
+  // group containing the selection is guaranteed expanded via
+  // effectivelyCollapsed above, so by the time this runs the row's
+  // ref is already in the map.
   useEffect(() => {
     if (selectedId == null) return;
-    const record = records[selectedId];
-    const typename = record?.__typename;
-    if (typename != null && collapsed.has(typename)) {
-      setCollapsed((prev) => {
-        const next = new Set(prev);
-        next.delete(typename);
-        return next;
-      });
-      return;
-    }
     const el = rowRefs.current.get(selectedId);
     if (el != null) el.scrollIntoView({ block: 'nearest' });
-  }, [selectedId, records, collapsed]);
+  }, [selectedId]);
 
   function toggle(typename: string) {
     setCollapsed((prev) => {
@@ -119,7 +125,7 @@ export function RecordList({ records, selectedId, onPreview, onPin }: Props) {
               key={g.typename}
               group={g}
               records={records}
-              collapsed={collapsed.has(g.typename)}
+              collapsed={effectivelyCollapsed.has(g.typename)}
               onToggle={() => toggle(g.typename)}
               selectedId={selectedId}
               onPreview={onPreview}

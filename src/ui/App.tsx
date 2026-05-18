@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useInspector, type ConnectionStatus } from './useInspector';
 import { RecordList } from './RecordList';
 import { RecordDetails } from './RecordDetails';
@@ -45,78 +45,114 @@ const EMPTY_TABS: TabState = {
 export function App() {
   const { status, environments } = useInspector(WS_URL);
   const envIds = useMemo(() => Array.from(environments.keys()), [environments]);
-  const [activeEnvId, setActiveEnvId] = useState<string | null>(null);
-  const [tabs, setTabs] = useState<TabState>(EMPTY_TABS);
 
-  // Auto-select the first env when one appears, and reset when it goes
-  // away (e.g. user reloaded their app).
-  useEffect(() => {
-    if (activeEnvId == null && envIds.length > 0) {
-      setActiveEnvId(envIds[0] ?? null);
-      return;
-    }
-    if (activeEnvId != null && !environments.has(activeEnvId)) {
-      setActiveEnvId(envIds[0] ?? null);
-    }
-  }, [activeEnvId, envIds, environments]);
+  // The user's explicit env pick, if any. The effective active env is
+  // derived: user's pick when still valid, otherwise the first env.
+  // This avoids a setState-in-effect to sync activeEnvId with the
+  // available envs.
+  const [userPickedEnvId, setUserPickedEnvId] = useState<string | null>(null);
+  const activeEnvId =
+    userPickedEnvId != null && environments.has(userPickedEnvId)
+      ? userPickedEnvId
+      : (envIds[0] ?? null);
 
-  // Tabs are scoped to the active env. Switching envs clears them.
-  useEffect(() => {
-    setTabs(EMPTY_TABS);
-  }, [activeEnvId]);
+  // Tabs are per-env: switching envs leaves each env's tab set alone,
+  // so coming back to a previous env restores its tabs. Keyed by envId
+  // in a single Map so we never need an effect to reset on env switch.
+  const [tabsByEnv, setTabsByEnv] = useState<ReadonlyMap<string, TabState>>(
+    new Map(),
+  );
+  const tabs =
+    (activeEnvId != null ? tabsByEnv.get(activeEnvId) : null) ?? EMPTY_TABS;
 
-  const active = activeEnvId != null ? environments.get(activeEnvId) : null;
+  const updateTabs = useCallback(
+    (envId: string, fn: (s: TabState) => TabState) => {
+      setTabsByEnv((prev) => {
+        const cur = prev.get(envId) ?? EMPTY_TABS;
+        const next = fn(cur);
+        if (next === cur) return prev;
+        const out = new Map(prev);
+        out.set(envId, next);
+        return out;
+      });
+    },
+    [],
+  );
 
-  const openRecord = useCallback((id: string, asPreview = true) => {
-    setTabs((s) => {
-      const isOpen = s.tabIds.includes(id);
-      if (isOpen) {
-        // Already open — activate it. If this is a pin request and
-        // the tab is currently the preview, also clear the slot so
-        // double-clicking a preview row promotes it to pinned.
-        const previewTabId =
-          !asPreview && s.previewTabId === id ? null : s.previewTabId;
-        if (s.activeTabId === id && previewTabId === s.previewTabId) return s;
-        return { ...s, activeTabId: id, previewTabId };
-      }
-      if (asPreview && s.previewTabId != null) {
-        // Replace the existing preview slot in-place.
+  const openRecord = useCallback(
+    (id: string, asPreview = true) => {
+      if (activeEnvId == null) return;
+      updateTabs(activeEnvId, (s) => {
+        const isOpen = s.tabIds.includes(id);
+        if (isOpen) {
+          // Already open — activate it. If this is a pin request and
+          // the tab is currently the preview, also clear the slot so
+          // double-clicking a preview row promotes it to pinned.
+          const previewTabId =
+            !asPreview && s.previewTabId === id ? null : s.previewTabId;
+          if (s.activeTabId === id && previewTabId === s.previewTabId) {
+            return s;
+          }
+          return { ...s, activeTabId: id, previewTabId };
+        }
+        if (asPreview && s.previewTabId != null) {
+          // Replace the existing preview slot in-place.
+          return {
+            tabIds: s.tabIds.map((x) => (x === s.previewTabId ? id : x)),
+            previewTabId: id,
+            activeTabId: id,
+          };
+        }
         return {
-          tabIds: s.tabIds.map((x) => (x === s.previewTabId ? id : x)),
-          previewTabId: id,
+          tabIds: [...s.tabIds, id],
+          previewTabId: asPreview ? id : s.previewTabId,
           activeTabId: id,
         };
-      }
-      return {
-        tabIds: [...s.tabIds, id],
-        previewTabId: asPreview ? id : s.previewTabId,
-        activeTabId: id,
-      };
-    });
-  }, []);
+      });
+    },
+    [activeEnvId, updateTabs],
+  );
 
-  const activateTab = useCallback((id: string) => {
-    setTabs((s) => (s.activeTabId === id ? s : { ...s, activeTabId: id }));
-  }, []);
+  const activateTab = useCallback(
+    (id: string) => {
+      if (activeEnvId == null) return;
+      updateTabs(activeEnvId, (s) =>
+        s.activeTabId === id ? s : { ...s, activeTabId: id },
+      );
+    },
+    [activeEnvId, updateTabs],
+  );
 
-  const pinTab = useCallback((id: string) => {
-    setTabs((s) => (s.previewTabId === id ? { ...s, previewTabId: null } : s));
-  }, []);
+  const pinTab = useCallback(
+    (id: string) => {
+      if (activeEnvId == null) return;
+      updateTabs(activeEnvId, (s) =>
+        s.previewTabId === id ? { ...s, previewTabId: null } : s,
+      );
+    },
+    [activeEnvId, updateTabs],
+  );
 
-  const closeTab = useCallback((id: string) => {
-    setTabs((s) => {
-      const idx = s.tabIds.indexOf(id);
-      if (idx === -1) return s;
-      const tabIds = s.tabIds.filter((x) => x !== id);
-      const previewTabId = s.previewTabId === id ? null : s.previewTabId;
-      // Prefer the tab to the right, fall back left, otherwise none.
-      const activeTabId =
-        s.activeTabId === id
-          ? (tabIds[idx] ?? tabIds[idx - 1] ?? null)
-          : s.activeTabId;
-      return { tabIds, previewTabId, activeTabId };
-    });
-  }, []);
+  const closeTab = useCallback(
+    (id: string) => {
+      if (activeEnvId == null) return;
+      updateTabs(activeEnvId, (s) => {
+        const idx = s.tabIds.indexOf(id);
+        if (idx === -1) return s;
+        const tabIds = s.tabIds.filter((x) => x !== id);
+        const previewTabId = s.previewTabId === id ? null : s.previewTabId;
+        // Prefer the tab to the right, fall back left, otherwise none.
+        const activeTabId =
+          s.activeTabId === id
+            ? (tabIds[idx] ?? tabIds[idx - 1] ?? null)
+            : s.activeTabId;
+        return { tabIds, previewTabId, activeTabId };
+      });
+    },
+    [activeEnvId, updateTabs],
+  );
+
+  const active = activeEnvId != null ? environments.get(activeEnvId) : null;
 
   return (
     <div className="grid h-screen grid-rows-[auto_minmax(0,1fr)] font-sans text-sm">
@@ -129,7 +165,7 @@ export function App() {
           {envIds.map((id) => (
             <button
               key={id}
-              onClick={() => setActiveEnvId(id)}
+              onClick={() => setUserPickedEnvId(id)}
               className={`rounded px-2 py-0.5 text-xs ${
                 id === activeEnvId
                   ? 'bg-zinc-700 text-zinc-100'

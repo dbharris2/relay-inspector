@@ -65,7 +65,7 @@ export function App() {
       {active == null ? (
         <EmptyState status={status} />
       ) : (
-        <div className="grid h-full grid-cols-[minmax(220px,_300px)_minmax(0,1fr)] overflow-hidden">
+        <div className="grid h-full grid-cols-[minmax(220px,_300px)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden">
           <RecordList
             records={active.records}
             selectedId={selectedRecordId}

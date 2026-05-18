@@ -34,7 +34,7 @@ export function RecordDetails({ records, selectedId, onSelect }: Props) {
   const label = getRecordLabel(record);
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto">
+    <div className="grid h-full grid-rows-[auto_minmax(0,1fr)]">
       <header className="border-b border-zinc-800 p-3">
         <div className="flex items-baseline gap-2">
           <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-300">
@@ -49,7 +49,7 @@ export function RecordDetails({ records, selectedId, onSelect }: Props) {
         </div>
       </header>
 
-      <div className="flex-1 px-2 py-2">
+      <div className="overflow-y-auto px-2 py-2">
         {fields.length === 0 ? (
           <div className="px-2 text-xs text-zinc-500">No fields.</div>
         ) : (

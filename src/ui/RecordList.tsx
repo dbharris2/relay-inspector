@@ -65,7 +65,7 @@ export function RecordList({ records, selectedId, onSelect }: Props) {
   }
 
   return (
-    <div className="flex h-full flex-col border-r border-zinc-800">
+    <div className="grid h-full grid-rows-[auto_minmax(0,1fr)_auto] border-r border-zinc-800">
       <div className="border-b border-zinc-800 p-2">
         <input
           type="search"
@@ -76,7 +76,7 @@ export function RecordList({ records, selectedId, onSelect }: Props) {
         />
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="overflow-y-auto">
         {groups.length === 0 ? (
           <div className="p-4 text-center text-xs text-zinc-500">
             {search ? 'No matching records.' : 'No records yet.'}

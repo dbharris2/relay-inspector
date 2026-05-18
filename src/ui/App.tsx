@@ -36,7 +36,7 @@ export function App() {
   const active = activeEnvId != null ? environments.get(activeEnvId) : null;
 
   return (
-    <div className="grid h-screen grid-rows-[auto_1fr] font-sans text-sm">
+    <div className="grid h-screen grid-rows-[auto_minmax(0,1fr)] font-sans text-sm">
       <header className="flex items-center gap-4 border-b border-zinc-800 px-4 py-2">
         <h1 className="text-sm font-semibold tracking-wide text-zinc-200">
           Relay Inspector
@@ -65,7 +65,7 @@ export function App() {
       {active == null ? (
         <EmptyState status={status} />
       ) : (
-        <div className="grid grid-cols-[minmax(220px,_300px)_1fr] overflow-hidden">
+        <div className="grid h-full grid-cols-[minmax(220px,_300px)_minmax(0,1fr)] overflow-hidden">
           <RecordList
             records={active.records}
             selectedId={selectedRecordId}

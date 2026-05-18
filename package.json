@@ -10,7 +10,11 @@
   "scripts": {
     "dev": "vite",
     "dev:server": "tsx watch src/server/index.ts",
-    "build": "tsc -b && vite build",
+    "start": "pnpm run build && tsx bin.ts",
+    "smoke": "tsx scripts/e2e-smoke.ts",
+    "build": "tsc -b && pnpm run build:ui && pnpm run build:core",
+    "build:ui": "vite build",
+    "build:core": "vite build --config vite.core.config.ts",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",

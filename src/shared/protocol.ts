@@ -9,14 +9,14 @@
 
 export type EnvironmentId = string;
 
-export type Record = Readonly<{
+export type StoreRecord = Readonly<{
   __id: string;
   __typename: string;
   [field: string]: unknown;
 }>;
 
 export type RecordSource = Readonly<{
-  [id: string]: Record | null;
+  [id: string]: StoreRecord | null;
 }>;
 
 export type EnvironmentSnapshot = Readonly<{

@@ -1,22 +1,13 @@
 /**
- * The "core" script — bundled into a small JS file that the user loads
- * into their app during development. Responsibilities:
- *
- *   1. Install the global hook (`window.__RELAY_INSPECTOR_HOOK__`).
- *   2. Detect Relay environments as they're created.
- *   3. Wrap `environment.__log` to capture `store.publish` events.
- *   4. Stream sanitized record snapshots back to the inspector UI
- *      over a WebSocket to localhost.
- *
- * Implementation is intentionally minimal here — this file is a stub
- * to be filled in next.
+ * Public API for programmatic use. Prefer the script-tag form for
+ * simple dev setups; this entry exists for users who want to import
+ * `relay-inspector/core` directly from their app.
  */
+import { createConnection, type ConnectOptions } from './connect';
+import { installHook } from './hook';
 
-export type ConnectOptions = {
-  host?: string;
-  port?: number;
-};
+export type { ConnectOptions };
 
-export function connectToInspector(_options: ConnectOptions = {}): void {
-  throw new Error('connectToInspector: not implemented yet');
+export function connectToInspector(options: ConnectOptions = {}): void {
+  installHook(createConnection(options));
 }

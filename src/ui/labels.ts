@@ -19,6 +19,9 @@ const NAME_FIELDS = [
   'handle',
   'email',
   'slug',
+  'body',
+  'value',
+  '__resolverValue',
 ];
 
 export function getRecordLabel(

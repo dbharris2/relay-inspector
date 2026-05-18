@@ -155,7 +155,7 @@ export function App() {
             onPreview={(id) => openRecord(id, true)}
             onPin={(id) => openRecord(id, false)}
           />
-          <div className="grid grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
+          <div className="grid min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
             <TabBar
               records={active.records}
               tabIds={tabs.tabIds}

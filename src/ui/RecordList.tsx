@@ -1,11 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RecordSource } from '~/shared/protocol';
 import { getRecordLabel, shortenId } from './labels';
 
 export type Props = {
   records: RecordSource;
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  /** Single click — opens or activates the record as a preview tab. */
+  onPreview: (id: string) => void;
+  /** Double click — opens the record as a pinned (non-preview) tab. */
+  onPin: (id: string) => void;
 };
 
 type Group = {
@@ -45,7 +48,7 @@ function buildGroups(records: RecordSource, search: string): Group[] {
   return groups;
 }
 
-export function RecordList({ records, selectedId, onSelect }: Props) {
+export function RecordList({ records, selectedId, onPreview, onPin }: Props) {
   const [search, setSearch] = useState('');
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
 
@@ -54,6 +57,35 @@ export function RecordList({ records, selectedId, onSelect }: Props) {
     () => groups.reduce((n, g) => n + g.ids.length, 0),
     [groups],
   );
+
+  const rowRefs = useRef(new Map<string, HTMLButtonElement | null>());
+  const registerRow = useCallback(
+    (id: string, el: HTMLButtonElement | null) => {
+      if (el == null) rowRefs.current.delete(id);
+      else rowRefs.current.set(id, el);
+    },
+    [],
+  );
+
+  // When the active tab changes (often via a ref-chip click), make sure
+  // the corresponding row is visible: expand its group if collapsed,
+  // then scrollIntoView. The expand step takes a render, so the effect
+  // re-runs after `collapsed` updates and the row ref becomes available.
+  useEffect(() => {
+    if (selectedId == null) return;
+    const record = records[selectedId];
+    const typename = record?.__typename;
+    if (typename != null && collapsed.has(typename)) {
+      setCollapsed((prev) => {
+        const next = new Set(prev);
+        next.delete(typename);
+        return next;
+      });
+      return;
+    }
+    const el = rowRefs.current.get(selectedId);
+    if (el != null) el.scrollIntoView({ block: 'nearest' });
+  }, [selectedId, records, collapsed]);
 
   function toggle(typename: string) {
     setCollapsed((prev) => {
@@ -90,7 +122,9 @@ export function RecordList({ records, selectedId, onSelect }: Props) {
               collapsed={collapsed.has(g.typename)}
               onToggle={() => toggle(g.typename)}
               selectedId={selectedId}
-              onSelect={onSelect}
+              onPreview={onPreview}
+              onPin={onPin}
+              registerRow={registerRow}
             />
           ))
         )}
@@ -109,14 +143,18 @@ function Group({
   collapsed,
   onToggle,
   selectedId,
-  onSelect,
+  onPreview,
+  onPin,
+  registerRow,
 }: {
   group: Group;
   records: RecordSource;
   collapsed: boolean;
   onToggle: () => void;
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  onPreview: (id: string) => void;
+  onPin: (id: string) => void;
+  registerRow: (id: string, el: HTMLButtonElement | null) => void;
 }) {
   return (
     <div className="border-b border-zinc-900">
@@ -148,8 +186,10 @@ function Group({
             return (
               <button
                 key={id}
-                onClick={() => onSelect(id)}
-                className={`flex w-full flex-col gap-0.5 px-3 py-1 text-left text-xs ${
+                ref={(el) => registerRow(id, el)}
+                onClick={() => onPreview(id)}
+                onDoubleClick={() => onPin(id)}
+                className={`flex w-full select-none flex-col gap-0.5 px-3 py-1 text-left text-xs ${
                   isSelected
                     ? 'bg-sky-900/40 text-sky-100'
                     : 'text-zinc-300 hover:bg-zinc-900'

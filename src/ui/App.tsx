@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useInspector, type ConnectionStatus } from './useInspector';
 import { RecordList } from './RecordList';
 import { RecordDetails } from './RecordDetails';
+import { TabBar } from './TabBar';
 
 const WS_URL = (() => {
   if (typeof window === 'undefined') return 'ws://localhost:8097/ws';
@@ -15,11 +16,37 @@ const WS_URL = (() => {
   return `${wsProto}//${hostname}:${port}/ws`;
 })();
 
+/**
+ * Tab state. Mirrors VSCode's preview-tab model:
+ *
+ *   - `tabIds` is the ordered list of every open tab.
+ *   - `previewTabId`, if non-null, identifies the single tab in the
+ *     "preview" slot. A new preview replaces the existing preview
+ *     rather than appending. Double-clicking a preview tab pins it
+ *     (clears the slot, tab stays open).
+ *   - `activeTabId` is whichever tab the right pane is currently
+ *     showing.
+ *
+ * Invariant: previewTabId, if non-null, is in tabIds. activeTabId,
+ * if non-null, is in tabIds.
+ */
+type TabState = {
+  tabIds: readonly string[];
+  previewTabId: string | null;
+  activeTabId: string | null;
+};
+
+const EMPTY_TABS: TabState = {
+  tabIds: [],
+  previewTabId: null,
+  activeTabId: null,
+};
+
 export function App() {
   const { status, environments } = useInspector(WS_URL);
   const envIds = useMemo(() => Array.from(environments.keys()), [environments]);
   const [activeEnvId, setActiveEnvId] = useState<string | null>(null);
-  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
+  const [tabs, setTabs] = useState<TabState>(EMPTY_TABS);
 
   // Auto-select the first env when one appears, and reset when it goes
   // away (e.g. user reloaded their app).
@@ -33,7 +60,63 @@ export function App() {
     }
   }, [activeEnvId, envIds, environments]);
 
+  // Tabs are scoped to the active env. Switching envs clears them.
+  useEffect(() => {
+    setTabs(EMPTY_TABS);
+  }, [activeEnvId]);
+
   const active = activeEnvId != null ? environments.get(activeEnvId) : null;
+
+  const openRecord = useCallback((id: string, asPreview = true) => {
+    setTabs((s) => {
+      const isOpen = s.tabIds.includes(id);
+      if (isOpen) {
+        // Already open — activate it. If this is a pin request and
+        // the tab is currently the preview, also clear the slot so
+        // double-clicking a preview row promotes it to pinned.
+        const previewTabId =
+          !asPreview && s.previewTabId === id ? null : s.previewTabId;
+        if (s.activeTabId === id && previewTabId === s.previewTabId) return s;
+        return { ...s, activeTabId: id, previewTabId };
+      }
+      if (asPreview && s.previewTabId != null) {
+        // Replace the existing preview slot in-place.
+        return {
+          tabIds: s.tabIds.map((x) => (x === s.previewTabId ? id : x)),
+          previewTabId: id,
+          activeTabId: id,
+        };
+      }
+      return {
+        tabIds: [...s.tabIds, id],
+        previewTabId: asPreview ? id : s.previewTabId,
+        activeTabId: id,
+      };
+    });
+  }, []);
+
+  const activateTab = useCallback((id: string) => {
+    setTabs((s) => (s.activeTabId === id ? s : { ...s, activeTabId: id }));
+  }, []);
+
+  const pinTab = useCallback((id: string) => {
+    setTabs((s) => (s.previewTabId === id ? { ...s, previewTabId: null } : s));
+  }, []);
+
+  const closeTab = useCallback((id: string) => {
+    setTabs((s) => {
+      const idx = s.tabIds.indexOf(id);
+      if (idx === -1) return s;
+      const tabIds = s.tabIds.filter((x) => x !== id);
+      const previewTabId = s.previewTabId === id ? null : s.previewTabId;
+      // Prefer the tab to the right, fall back left, otherwise none.
+      const activeTabId =
+        s.activeTabId === id
+          ? (tabIds[idx] ?? tabIds[idx - 1] ?? null)
+          : s.activeTabId;
+      return { tabIds, previewTabId, activeTabId };
+    });
+  }, []);
 
   return (
     <div className="grid h-screen grid-rows-[auto_minmax(0,1fr)] font-sans text-sm">
@@ -68,14 +151,26 @@ export function App() {
         <div className="grid h-full grid-cols-[minmax(220px,_300px)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden">
           <RecordList
             records={active.records}
-            selectedId={selectedRecordId}
-            onSelect={setSelectedRecordId}
+            selectedId={tabs.activeTabId}
+            onPreview={(id) => openRecord(id, true)}
+            onPin={(id) => openRecord(id, false)}
           />
-          <RecordDetails
-            records={active.records}
-            selectedId={selectedRecordId}
-            onSelect={setSelectedRecordId}
-          />
+          <div className="grid grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
+            <TabBar
+              records={active.records}
+              tabIds={tabs.tabIds}
+              previewTabId={tabs.previewTabId}
+              activeTabId={tabs.activeTabId}
+              onSelect={activateTab}
+              onPin={pinTab}
+              onClose={closeTab}
+            />
+            <RecordDetails
+              records={active.records}
+              selectedId={tabs.activeTabId}
+              onSelect={(id) => openRecord(id, true)}
+            />
+          </div>
         </div>
       )}
     </div>

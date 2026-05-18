@@ -129,14 +129,17 @@
           },
         };
 
+        // Mirror real Relay's shape: the store carries __log, the
+        // environment exposes getStore().
+        const store = {
+          __log: null,
+          getSource: () => source,
+        };
+
         const env = {
-          __log(_event) {
-            /* will be wrapped by the inspector hook */
-          },
-          getStore() {
-            return { getSource: () => source };
-          },
+          getStore: () => store,
           _records: records,
+          _store: store,
         };
 
         return env;
@@ -150,7 +153,7 @@
 
       whenHookReady(() => {
         const env = makeFakeEnvironment();
-        window.__RELAY_DEVTOOLS_HOOK__.inject(env);
+        window.__RELAY_DEVTOOLS_HOOK__.registerEnvironment(env);
         window.__demoEnv = env;
         log(
           'environment registered; ' +
@@ -168,7 +171,8 @@
         const env = window.__demoEnv;
         if (!env) return log('demo env not ready');
         mutator(env._records);
-        env.__log({ name: 'store.publish' });
+        // Fire through the store's __log — same as real Relay.
+        env._store.__log({ name: 'store.publish' });
       }
 
       document.getElementById('btn-add-post').onclick = () => {

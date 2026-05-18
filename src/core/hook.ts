@@ -2,31 +2,40 @@ import type { Connection } from './connect';
 import { sanitizeRecordSource } from './sanitize';
 
 /**
- * Installs `window.__RELAY_DEVTOOLS_HOOK__` and wires environments
- * registered with it to a Connection.
+ * Installs `window.__RELAY_DEVTOOLS_HOOK__` and wires every Relay
+ * environment that registers with it.
  *
- * We deliberately reuse Relay's existing devtools-hook name so any
- * Relay environment auto-detects us without user wiring. If the
- * official Relay DevTools have already installed a hook, we leave it
- * alone — the user can pick one.
+ * Contract is dictated by relay-runtime's
+ * `registerEnvironmentWithDevTools.js`:
+ *
+ *   const hook = global.__RELAY_DEVTOOLS_HOOK__;
+ *   if (hook) hook.registerEnvironment(environment);
+ *
+ * which is called automatically from `RelayModernEnvironment`'s
+ * constructor. So as long as our hook is on `window` before the user's
+ * app calls `new Environment(...)`, registration is automatic.
+ *
+ * Important: `store.publish` events flow through `store.__log`, not
+ * `environment.__log`. We patch the store's log to catch them.
  */
 
+type RelayStoreLike = {
+  __log?: ((event: { name: string; [key: string]: unknown }) => void) | null;
+  getSource?: () => unknown;
+};
+
 type RelayEnvironmentLike = {
-  __log?: (event: { name: string; [key: string]: unknown }) => void;
-  getStore?: () => { getSource?: () => unknown };
+  getStore?: () => RelayStoreLike;
 };
 
 type DevtoolsHook = {
   isInjected: true;
-  /** Called by Relay when a new environment is constructed. */
-  inject(env: RelayEnvironmentLike): void;
+  registerEnvironment(env: RelayEnvironmentLike): void;
 };
 
-declare global {
-  interface Window {
-    __RELAY_DEVTOOLS_HOOK__?: DevtoolsHook;
-  }
-}
+type GlobalWithHook = typeof globalThis & {
+  __RELAY_DEVTOOLS_HOOK__?: DevtoolsHook;
+};
 
 let envSeq = 0;
 const envIds = new WeakMap<RelayEnvironmentLike, string>();
@@ -41,8 +50,8 @@ function idFor(env: RelayEnvironmentLike): string {
 }
 
 export function installHook(connection: Connection): void {
-  if (typeof window === 'undefined') return;
-  if (window.__RELAY_DEVTOOLS_HOOK__?.isInjected) return;
+  const g = globalThis as GlobalWithHook;
+  if (g.__RELAY_DEVTOOLS_HOOK__?.isInjected) return;
 
   const versions = new Map<string, number>();
 
@@ -63,10 +72,14 @@ export function installHook(connection: Connection): void {
   function attach(env: RelayEnvironmentLike) {
     const envId = idFor(env);
     connection.send({ type: 'environment.registered', envId });
+
+    const store = env.getStore?.();
+    if (store == null) return;
+
     publish(env);
 
-    const originalLog = env.__log;
-    env.__log = (event) => {
+    const originalLog = store.__log;
+    store.__log = (event) => {
       try {
         originalLog?.(event);
       } finally {
@@ -75,8 +88,8 @@ export function installHook(connection: Connection): void {
     };
   }
 
-  window.__RELAY_DEVTOOLS_HOOK__ = {
+  g.__RELAY_DEVTOOLS_HOOK__ = {
     isInjected: true,
-    inject: attach,
+    registerEnvironment: attach,
   };
 }

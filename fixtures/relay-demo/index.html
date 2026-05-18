@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Relay Inspector — Real Relay Demo</title>
+    <style>
+      body {
+        font:
+          14px/1.5 ui-sans-serif,
+          system-ui,
+          sans-serif;
+        background: #0a0a0a;
+        color: #e4e4e7;
+        margin: 0;
+        padding: 24px;
+      }
+      h1 {
+        font-size: 16px;
+        margin: 0 0 4px;
+      }
+      .muted {
+        color: #71717a;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        margin: 16px 0;
+      }
+      button {
+        background: #18181b;
+        color: #e4e4e7;
+        border: 1px solid #27272a;
+        border-radius: 4px;
+        padding: 6px 12px;
+        cursor: pointer;
+        font: inherit;
+      }
+      button:hover {
+        background: #27272a;
+      }
+      pre {
+        background: #18181b;
+        border: 1px solid #27272a;
+        border-radius: 4px;
+        padding: 12px;
+        overflow: auto;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Relay Inspector — Real Relay Demo</h1>
+    <p class="muted">
+      Uses actual <code>relay-runtime</code> via esm.sh. Constructs an
+      <code>Environment</code> + <code>Store</code>, publishes records through
+      <code>store.publish()</code>. Inspector should auto-register the env and
+      stream live snapshots.
+    </p>
+
+    <!-- Core script must load first so the hook is on window before
+         relay-runtime's Environment constructor runs. -->
+    <script src="/core.js"></script>
+
+    <script type="module">
+      // esm.sh re-exports relay-runtime with proper ESM bindings.
+      // Pin to v20 to match the dev dep in this repo.
+      const { Environment, Network, RecordSource, Store } =
+        await import('https://esm.sh/relay-runtime@20');
+
+      // Network function is never invoked in this demo (we publish
+      // directly), but Environment requires one.
+      const network = Network.create(() =>
+        Promise.reject(new Error('demo: no network')),
+      );
+
+      const store = new Store(new RecordSource());
+      const env = new Environment({ network, store });
+      window.__demoEnv = env;
+      log('Environment created — should auto-register with inspector hook');
+
+      let nextPostId = 1;
+
+      function publish(records) {
+        const source = new RecordSource(records);
+        env.getStore().publish(source);
+        // store.publish() emits the store.publish log event, which our
+        // hook listens to. The inspector should see the resulting
+        // merged record source on the other side.
+        env.getStore().notify();
+      }
+
+      function log(msg) {
+        const el = document.getElementById('log');
+        el.textContent = '> ' + msg + '\n' + el.textContent;
+      }
+
+      // Seed initial records.
+      publish({
+        'client:root': {
+          __id: 'client:root',
+          __typename: '__Root',
+          'user(id:"1")': { __ref: 'User:1' },
+        },
+        'User:1': {
+          __id: 'User:1',
+          __typename: 'User',
+          id: '1',
+          name: 'Ada Lovelace',
+          email: 'ada@example.com',
+        },
+      });
+      log('seeded User:1');
+
+      document.getElementById('btn-add-post').onclick = () => {
+        const id = 'Post:' + nextPostId;
+        publish({
+          [id]: {
+            __id: id,
+            __typename: 'Post',
+            id: String(nextPostId),
+            title: 'Post #' + nextPostId,
+            views: Math.floor(Math.random() * 100),
+          },
+        });
+        log('added ' + id);
+        nextPostId++;
+      };
+
+      document.getElementById('btn-rename').onclick = () => {
+        const names = ['Ada Lovelace', 'Grace Hopper', 'Alan Turing'];
+        const next = names[Math.floor(Math.random() * names.length)];
+        publish({
+          'User:1': {
+            __id: 'User:1',
+            __typename: 'User',
+            id: '1',
+            name: next,
+          },
+        });
+        log('renamed User:1 → ' + next);
+      };
+    </script>
+
+    <div class="row">
+      <button id="btn-add-post">Add a Post</button>
+      <button id="btn-rename">Rename User:1</button>
+    </div>
+
+    <pre id="log" class="muted">(no events yet)</pre>
+  </body>
+</html>

@@ -13,6 +13,8 @@
     "start": "pnpm run build && tsx bin.ts",
     "smoke": "tsx scripts/e2e-smoke.ts",
     "relay:check": "tsx scripts/relay-integration.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "build": "tsc -b && pnpm run build:ui && pnpm run build:core",
     "build:ui": "vite build",
     "build:core": "vite build --config vite.core.config.ts",
@@ -45,7 +47,8 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.2",
-    "vite": "^6.0.5"
+    "vite": "^6.0.5",
+    "vitest": "^4.1.6"
   },
   "engines": {
     "node": ">=20"

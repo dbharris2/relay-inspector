@@ -122,7 +122,7 @@ function Group({
     <div className="border-b border-zinc-900">
       <button
         onClick={onToggle}
-        className="flex w-full items-center justify-between px-2 py-1.5 text-left text-xs font-semibold text-zinc-200 hover:bg-zinc-900"
+        className="sticky top-0 z-10 flex w-full items-center justify-between border-b border-zinc-900 bg-zinc-950 px-2 py-1.5 text-left text-xs font-semibold text-zinc-200 hover:bg-zinc-900"
       >
         <span className="flex items-center gap-1.5">
           <span

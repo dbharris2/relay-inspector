@@ -1,5 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useInspector, type ConnectionStatus } from './useInspector';
+import { RecordList } from './RecordList';
+import { RecordDetails } from './RecordDetails';
 
 const WS_URL = (() => {
   if (typeof window === 'undefined') return 'ws://localhost:8097/ws';
@@ -16,13 +18,26 @@ const WS_URL = (() => {
 export function App() {
   const { status, environments } = useInspector(WS_URL);
   const envIds = useMemo(() => Array.from(environments.keys()), [environments]);
-  const [selected, setSelected] = useState<string | null>(null);
-  const activeId = selected ?? envIds[0] ?? null;
-  const active = activeId != null ? environments.get(activeId) : null;
+  const [activeEnvId, setActiveEnvId] = useState<string | null>(null);
+  const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
+
+  // Auto-select the first env when one appears, and reset when it goes
+  // away (e.g. user reloaded their app).
+  useEffect(() => {
+    if (activeEnvId == null && envIds.length > 0) {
+      setActiveEnvId(envIds[0] ?? null);
+      return;
+    }
+    if (activeEnvId != null && !environments.has(activeEnvId)) {
+      setActiveEnvId(envIds[0] ?? null);
+    }
+  }, [activeEnvId, envIds, environments]);
+
+  const active = activeEnvId != null ? environments.get(activeEnvId) : null;
 
   return (
-    <div className="grid h-screen grid-rows-[auto_1fr] font-mono text-sm">
-      <header className="flex items-center gap-4 border-b border-zinc-800 px-4 py-2.5">
+    <div className="grid h-screen grid-rows-[auto_1fr] font-sans text-sm">
+      <header className="flex items-center gap-4 border-b border-zinc-800 px-4 py-2">
         <h1 className="text-sm font-semibold tracking-wide text-zinc-200">
           Relay Inspector
         </h1>
@@ -31,28 +46,38 @@ export function App() {
           {envIds.map((id) => (
             <button
               key={id}
-              onClick={() => setSelected(id)}
+              onClick={() => setActiveEnvId(id)}
               className={`rounded px-2 py-0.5 text-xs ${
-                id === activeId
+                id === activeEnvId
                   ? 'bg-zinc-700 text-zinc-100'
                   : 'bg-zinc-900 text-zinc-400 hover:bg-zinc-800'
               }`}
             >
               {id}
+              <span className="ml-1.5 text-[10px] text-zinc-500">
+                v{environments.get(id)?.version ?? 0}
+              </span>
             </button>
           ))}
         </div>
       </header>
 
-      <main className="overflow-auto p-4">
-        {active == null ? (
-          <EmptyState status={status} />
-        ) : (
-          <pre className="whitespace-pre text-xs leading-relaxed text-zinc-300">
-            {JSON.stringify(active.records, null, 2)}
-          </pre>
-        )}
-      </main>
+      {active == null ? (
+        <EmptyState status={status} />
+      ) : (
+        <div className="grid grid-cols-[minmax(220px,_300px)_1fr] overflow-hidden">
+          <RecordList
+            records={active.records}
+            selectedId={selectedRecordId}
+            onSelect={setSelectedRecordId}
+          />
+          <RecordDetails
+            records={active.records}
+            selectedId={selectedRecordId}
+            onSelect={setSelectedRecordId}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -74,7 +99,7 @@ function StatusBadge({ status }: { status: ConnectionStatus }) {
 
 function EmptyState({ status }: { status: ConnectionStatus }) {
   return (
-    <div className="grid h-full place-items-center text-zinc-500">
+    <div className="grid place-items-center text-zinc-500">
       <div className="space-y-1 text-center">
         <p>
           {status === 'open'

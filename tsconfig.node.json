@@ -24,5 +24,13 @@
       "~/*": ["./src/*"]
     }
   },
-  "include": ["vite.config.ts", "src/server", "src/shared", "bin.ts"]
+  "include": [
+    "vite.config.ts",
+    "vite.core.config.ts",
+    "vitest.config.ts",
+    "extension/vite.config.ts",
+    "src/server",
+    "src/shared",
+    "bin.ts"
+  ]
 }

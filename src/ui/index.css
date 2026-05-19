@@ -1,5 +1,13 @@
 @import 'tailwindcss';
 
+/* The extension build sets Vite's root to extension/, which Tailwind 4
+ * uses as its scan base — without this, classes used in src/ui/*.tsx
+ * never make it into the panel's stylesheet. Paths are relative to
+ * this CSS file. The standalone build's Vite root is the workspace
+ * root, so this is a no-op for that build. */
+@source "..";
+@source "../core";
+
 @variant dark (&:where(.dark, .dark *));
 
 @theme {

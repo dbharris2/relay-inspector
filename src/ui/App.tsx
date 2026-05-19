@@ -1,20 +1,20 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useInspector, type ConnectionStatus } from './useInspector';
+import type { IncomingTransport } from './transport';
 import { RecordList } from './RecordList';
 import { RecordDetails } from './RecordDetails';
 import { TabBar } from './TabBar';
 
-const WS_URL = (() => {
-  if (typeof window === 'undefined') return 'ws://localhost:8097/ws';
-  // When the UI is served by the inspector server itself, use its
-  // origin. In Vite dev mode (`pnpm dev`) the UI runs on :5173 and
-  // points at the server's WS on :8097.
-  const { hostname, port, protocol } = window.location;
-  const wsProto = protocol === 'https:' ? 'wss:' : 'ws:';
-  if (port === '5173' || port === '')
-    return `ws://${hostname || 'localhost'}:8097/ws`;
-  return `${wsProto}//${hostname}:${port}/ws`;
-})();
+export type AppProps = {
+  /** Where inspector messages come from. WebSocket for the standalone
+   *  deploy, chrome.runtime port for the Chrome-extension deploy. */
+  transport: IncomingTransport;
+  /** Deploy-specific setup copy shown alongside the generic
+   *  "waiting for a Relay environment" message when there's nothing
+   *  to inspect yet. Standalone tells the user to add a script tag;
+   *  the extension tells them to reload the page. */
+  setupHint: ReactNode;
+};
 
 /**
  * Tab state. Mirrors VSCode's preview-tab model:
@@ -42,8 +42,8 @@ const EMPTY_TABS: TabState = {
   activeTabId: null,
 };
 
-export function App() {
-  const { status, environments } = useInspector(WS_URL);
+export function App({ transport, setupHint }: AppProps) {
+  const { status, environments } = useInspector(transport);
   const envIds = useMemo(() => Array.from(environments.keys()), [environments]);
 
   // The user's explicit env pick, if any. The effective active env is
@@ -182,7 +182,7 @@ export function App() {
       </header>
 
       {active == null ? (
-        <EmptyState status={status} />
+        <EmptyState status={status} setupHint={setupHint} />
       ) : (
         <div className="grid h-full grid-cols-[minmax(220px,_300px)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden">
           <RecordList
@@ -228,22 +228,22 @@ function StatusBadge({ status }: { status: ConnectionStatus }) {
   );
 }
 
-function EmptyState({ status }: { status: ConnectionStatus }) {
+function EmptyState({
+  status,
+  setupHint,
+}: {
+  status: ConnectionStatus;
+  setupHint: ReactNode;
+}) {
   return (
     <div className="grid place-items-center text-zinc-500">
       <div className="space-y-1 text-center">
         <p>
           {status === 'open'
             ? 'Connected. Waiting for a Relay environment…'
-            : 'Not connected to inspector server.'}
+            : 'Not connected.'}
         </p>
-        <p className="text-xs text-zinc-600">
-          Load{' '}
-          <code className="rounded bg-zinc-900 px-1.5 py-0.5 text-zinc-300">
-            &lt;script src="http://localhost:8097/core.js"&gt;
-          </code>{' '}
-          in your dev app.
-        </p>
+        <p className="text-xs text-zinc-600">{setupHint}</p>
       </div>
     </div>
   );

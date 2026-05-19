@@ -1,68 +1,128 @@
 # relay-inspector
 
 A read-only visualization tool for [Relay](https://relay.dev) stores. Renders
-the normalized record cache as a navigable tree, streamed live from your running
-app over WebSocket.
+the normalized record cache as a navigable tree, streamed live from your
+running app.
+
+Ships in two shapes:
+
+- **Chrome extension** — install once, panel shows up in DevTools next to
+  Components / Network / etc. No CSP edits, no script tag, no extra
+  processes. This is the recommended path.
+- **Standalone server + UI** — `pnpm dev:server` + a `<script>` tag. Used
+  for developing the inspector itself with full HMR; also a viable path
+  for environments where you can't or don't want to install a browser
+  extension.
 
 > Status: usable end-to-end. Tree view with VSCode-style preview tabs,
-> wheel-scrollable tab bar, and live snapshot updates.
+> wheel-scrollable tab bar, sticky type-group headers, live snapshot
+> updates.
 
 ## Architecture
 
 ```
-your app ─[<script src=…/core.js>]─► core ─[ws://localhost:8097]─► server ─► UI
+       extension deploy                       standalone deploy
+
+  page (main world)                       page
+    └─ main-world.ts (hook)                 └─ <script src=…/core.js>
+       window.postMessage ↓                    WebSocket ↓
+  content script (isolated)               server (Node)
+       chrome.runtime.Port ↓                   WebSocket ↓
+  service worker (routes by tab)          UI (browser tab)
+       chrome.runtime.Port ↓
+  devtools panel (UI)
 ```
 
-- **`src/core/`** — the small JS bundle that gets loaded into the user's
-  app during development. Installs a global hook (`__RELAY_DEVTOOLS_HOOK__`),
-  attaches to every Relay `Environment` that registers with it, sanitizes
-  the `RecordSource` on every `store.publish`, and ships snapshots over
-  WebSocket. ~2 KB minified.
-- **`src/server/`** — Node process serving the UI over HTTP and the
-  core bundle at `/core.js`. Relays WebSocket messages between core
-  clients and UI clients.
-- **`src/ui/`** — the React inspector. Left pane: searchable record list
-  grouped by `__typename` with sticky group headers. Right pane: tabbed
-  record details with `__ref`/`__refs` chips that navigate between
-  records. Tab bar supports wheel-scroll, arrow buttons, and preview vs
-  pinned semantics.
-- **`src/shared/`** — wire protocol types shared between `core` and `ui`.
+- **`src/core/`** — Relay hook + sanitizer. Used in **both** deploys:
+  bundled into `core.js` (~2 KB) for the standalone deploy, and imported
+  by `extension/src/main-world.ts` for the extension deploy.
+- **`src/ui/`** — React inspector. Identical in both deploys. Takes an
+  `IncomingTransport` (see `src/ui/transport.ts`) so it doesn't care
+  whether messages arrive over a WebSocket or a `chrome.runtime.Port`.
+- **`src/server/`** — Node HTTP + WebSocket server. Standalone-only.
+- **`src/shared/protocol.ts`** — wire types shared by both producers and
+  consumers.
+- **`extension/`** — manifest, devtools page, panel entry, content
+  scripts (one ISOLATED, one MAIN), service worker, runtime transport.
 
 ## Development
 
 ```sh
 pnpm install
-pnpm dev          # UI dev server (Vite) at http://localhost:5173 — HMR
-pnpm dev:server   # HTTP + WS server at http://localhost:8097
-pnpm build        # build UI + core bundles into dist/
-pnpm start        # build, start server, open browser
 pnpm test         # vitest
 pnpm typecheck
 pnpm lint
 pnpm format       # prettier write
 pnpm relay:check  # real relay-runtime end-to-end via Node
-pnpm smoke        # WS round-trip smoke test
 ```
 
-While iterating on the UI run **both** `pnpm dev` and `pnpm dev:server`.
-Open `http://localhost:5173` for HMR on the inspector; the WS connection
-to the server on `:8097` is wired up automatically. Your dev app still
-loads `core.js` from `:8097`.
+### Iterating on the inspector UI
 
-## Using it against a real app
+The standalone deploy is the fastest dev loop because Vite HMR works
+end-to-end:
+
+```sh
+pnpm dev:server   # HTTP + WS server at :8097
+pnpm dev          # Vite UI at :5173 with HMR
+```
+
+Open `http://localhost:5173` — UI hot-reloads on save, WS still points
+at the server on `:8097`. Your test app loads `core.js` from `:8097`.
+
+### Iterating on the extension
+
+```sh
+pnpm dev:extension   # CRXJS dev server with HMR for the panel
+```
+
+Then load `dist/extension` as an unpacked extension (see below). The
+content scripts and service worker still need an "Update" click in
+`chrome://extensions` when they change; the panel hot-reloads on save.
+
+### Building
+
+```sh
+pnpm build              # everything: UI + core + extension
+pnpm build:ui           # standalone UI only
+pnpm build:core         # standalone core.js bundle only
+pnpm build:extension    # Chrome extension only → dist/extension/
+```
+
+## Using it (Chrome extension)
+
+1. `pnpm install && pnpm build:extension`.
+2. Open `chrome://extensions`, enable **Developer mode**.
+3. Click **Load unpacked**, pick `dist/extension/`.
+4. Open DevTools on any page running Relay. The **Relay Inspector**
+   tab shows up in the DevTools tab strip (in the `»` overflow if too
+   many panels are installed).
+5. If your app was already loaded when you opened DevTools, reload
+   the page so the inspector sees the initial environment registration.
+
+### Gotchas
+
+- **Conflicts with the official Relay DevTools extension.** Both
+  install hooks at `document_start` and the last one wins. Disable
+  the other extension (or use a clean profile) when testing this one.
+- **Service worker tear-down.** Chrome can terminate the extension's
+  service worker between messages on idle pages. The content script
+  reopens its port lazily, so this is mostly invisible — if the panel
+  goes quiet for a minute after no activity, reload the page.
+
+## Using it (standalone)
 
 1. `pnpm build && pnpm dev:server` — serves `/core.js` and the WebSocket on `:8097`.
 2. In your dev app's HTML, before any Relay-using script:
    ```html
    <script src="http://localhost:8097/core.js"></script>
    ```
-3. Open `http://localhost:8097/` (or `http://localhost:5173/` in dev mode)
-   for the inspector.
+3. Open `http://localhost:8097/` (or `http://localhost:5173/` while
+   running `pnpm dev`) for the inspector.
 
 ### Content-Security-Policy
 
-If your dev app sets a strict CSP, allow the inspector's origins in **two**
-directives:
+If your dev app sets a strict CSP, allow the inspector's origins in
+**two** directives:
 
 ```
 script-src ... http://localhost:8097
@@ -70,18 +130,13 @@ connect-src ... ws://localhost:8097 http://localhost:8097
 ```
 
 The first is for `core.js`; the second is for the WebSocket connection.
-Missing either one looks like silent failure — `core.js` won't load, or it
-loads but never connects. Symptoms appear in the browser console.
+Missing either one looks like silent failure — `core.js` won't load, or
+it loads but never connects. The extension deploy doesn't need either.
 
-### Other gotchas
+### Other standalone gotchas
 
 - **Load order matters.** The script must run before `new Environment(...)`.
   Put it as early as possible in your HTML (`<head>` is safest).
-- **Another Relay devtools extension installed?** The official browser
-  extension installs its own hook at `document_start`, so by the time
-  `core.js` runs, the registration has already happened against the
-  extension's hook. Disable the extension (or use a clean profile) when
-  testing with `relay-inspector`.
 - **Mixed content.** Loading `http://localhost:8097` from an `https://`
   page is blocked by browsers. Use plain `http` in dev.
 

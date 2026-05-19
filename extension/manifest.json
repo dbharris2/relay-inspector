@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Relay Inspector",
+  "description": "Read-only inspector for Relay normalized stores.",
+  "version": "0.0.0",
+  "minimum_chrome_version": "120",
+  "devtools_page": "devtools.html",
+  "background": {
+    "service_worker": "src/background.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/main-world.ts"],
+      "run_at": "document_start",
+      "all_frames": false,
+      "world": "MAIN"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content.ts"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "host_permissions": ["<all_urls>"]
+}

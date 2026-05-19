@@ -1,20 +1,15 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useInspector, type ConnectionStatus } from './useInspector';
+import type { IncomingTransport } from './transport';
 import { RecordList } from './RecordList';
 import { RecordDetails } from './RecordDetails';
 import { TabBar } from './TabBar';
 
-const WS_URL = (() => {
-  if (typeof window === 'undefined') return 'ws://localhost:8097/ws';
-  // When the UI is served by the inspector server itself, use its
-  // origin. In Vite dev mode (`pnpm dev`) the UI runs on :5173 and
-  // points at the server's WS on :8097.
-  const { hostname, port, protocol } = window.location;
-  const wsProto = protocol === 'https:' ? 'wss:' : 'ws:';
-  if (port === '5173' || port === '')
-    return `ws://${hostname || 'localhost'}:8097/ws`;
-  return `${wsProto}//${hostname}:${port}/ws`;
-})();
+export type AppProps = {
+  /** Where inspector messages come from. WebSocket for the standalone
+   *  deploy, chrome.runtime port for the Chrome-extension deploy. */
+  transport: IncomingTransport;
+};
 
 /**
  * Tab state. Mirrors VSCode's preview-tab model:
@@ -42,8 +37,8 @@ const EMPTY_TABS: TabState = {
   activeTabId: null,
 };
 
-export function App() {
-  const { status, environments } = useInspector(WS_URL);
+export function App({ transport }: AppProps) {
+  const { status, environments } = useInspector(transport);
   const envIds = useMemo(() => Array.from(environments.keys()), [environments]);
 
   // The user's explicit env pick, if any. The effective active env is

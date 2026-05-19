@@ -57,6 +57,18 @@ export function createRuntimeTransport(): IncomingTransport {
           handler.onStatus('closed');
           scheduleRetry();
         });
+
+        // Ask the page to replay any environments that registered
+        // before we connected — that's the common path when DevTools
+        // is opened on a page that's already loaded. Idempotent: the
+        // UI's snapshot map dedupes environment.registered and
+        // store.publish overwrites with the same data.
+        try {
+          port.postMessage({ type: 'panel.hello' });
+        } catch {
+          // Port can die immediately on reconnect storms; the
+          // onDisconnect handler above schedules a retry.
+        }
       };
 
       connect();

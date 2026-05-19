@@ -10,14 +10,34 @@
  * Node server, we post messages to window, where the content script
  * (isolated world, same page) picks them up and forwards them to the
  * service worker and onward to the devtools panel.
+ *
+ * We also listen for `panel.hello` coming downstream (panel was just
+ * opened on a page that already has registered envs) and replay each
+ * env's registration + current snapshot so the panel doesn't sit on
+ * an empty state until the next store.publish fires.
  */
 import { installHook } from '~/core/hook';
 import type { CoreToUi } from '~/shared/protocol';
-import { ENVELOPE_TAG, type Envelope } from './envelope';
+import {
+  UPSTREAM_TAG,
+  isDownstreamEnvelope,
+  type UpstreamEnvelope,
+} from './envelope';
 
-installHook({
+const { replay } = installHook({
   send(msg: CoreToUi) {
-    const envelope: Envelope = { __relay_inspector__: ENVELOPE_TAG, msg };
+    const envelope: UpstreamEnvelope = {
+      __relay_inspector_up__: UPSTREAM_TAG,
+      msg,
+    };
     window.postMessage(envelope, '*');
   },
+});
+
+window.addEventListener('message', (event: MessageEvent) => {
+  if (event.source !== window) return;
+  if (!isDownstreamEnvelope(event.data)) return;
+  if (event.data.msg.type === 'panel.hello') {
+    replay();
+  }
 });

@@ -96,18 +96,33 @@ pnpm build:extension    # Chrome extension only → dist/extension/
 4. Open DevTools on any page running Relay. The **Relay Inspector**
    tab shows up in the DevTools tab strip (in the `»` overflow if too
    many panels are installed).
-5. If your app was already loaded when you opened DevTools, reload
-   the page so the inspector sees the initial environment registration.
+
+The panel asks the page to replay its registered environments on
+connect, so opening DevTools after the page has finished loading still
+populates the inspector — no manual page reload required.
 
 ### Gotchas
 
 - **Conflicts with the official Relay DevTools extension.** Both
-  install hooks at `document_start` and the last one wins. Disable
-  the other extension (or use a clean profile) when testing this one.
+  install hooks at `document_start` and the last one to set
+  `window.__RELAY_DEVTOOLS_HOOK__` wins. Disable the other extension
+  (or use a clean profile) when testing this one. To confirm which is
+  active, run `window.__RELAY_DEVTOOLS_HOOK__?.isInjected` in the
+  inspected page's console — `true` means ours.
+- **Updating the extension doesn't reach already-loaded tabs.**
+  After clicking **Reload** on the Relay Inspector card in
+  `chrome://extensions`, content scripts and service worker pick up
+  the new code for _new_ tabs — but tabs that were already open at
+  update time keep running the old content scripts. Symptom:
+  `window.__RELAY_DEVTOOLS_HOOK__?.isInjected` returns `undefined`.
+  Fix: fully reload (Cmd/Ctrl + R) any tab where you want the new
+  build; if that still shows stale behavior, close and reopen the tab.
 - **Service worker tear-down.** Chrome can terminate the extension's
-  service worker between messages on idle pages. The content script
-  reopens its port lazily, so this is mostly invisible — if the panel
-  goes quiet for a minute after no activity, reload the page.
+  service worker between messages on idle pages. The panel reconnects
+  on a 1 s backoff and the content script reopens its port lazily, so
+  this is mostly invisible — if the panel goes quiet for a minute after
+  no activity, the next event from the page (or the next reconnect's
+  panel.hello) wakes the chain back up.
 
 ## Using it (standalone)
 

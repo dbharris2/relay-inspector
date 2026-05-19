@@ -17,6 +17,11 @@ import { sanitizeRecordSource } from './sanitize';
  *
  * Important: `store.publish` events flow through `store.__log`, not
  * `environment.__log`. We patch the store's log to catch them.
+ *
+ * Returns a handle exposing `replay()`, used by the Chrome-extension
+ * deploy to re-emit environment.registered + store.publish for every
+ * known env when a freshly-opened devtools panel sends `panel.hello`.
+ * The standalone deploy ignores the handle.
  */
 
 type RelayStoreLike = {
@@ -37,6 +42,14 @@ type GlobalWithHook = typeof globalThis & {
   __RELAY_DEVTOOLS_HOOK__?: DevtoolsHook;
 };
 
+export type HookHandle = {
+  /** Re-emit environment.registered + store.publish for every env
+   *  currently known to the hook. No-op if no envs have registered. */
+  replay(): void;
+};
+
+const NOOP_HANDLE: HookHandle = { replay: () => {} };
+
 let envSeq = 0;
 const envIds = new WeakMap<RelayEnvironmentLike, string>();
 
@@ -49,11 +62,18 @@ function idFor(env: RelayEnvironmentLike): string {
   return id;
 }
 
-export function installHook(connection: Connection): void {
+export function installHook(connection: Connection): HookHandle {
   const g = globalThis as GlobalWithHook;
-  if (g.__RELAY_DEVTOOLS_HOOK__?.isInjected) return;
+  if (g.__RELAY_DEVTOOLS_HOOK__?.isInjected) return NOOP_HANDLE;
 
   const versions = new Map<string, number>();
+  // Iterable mirror of `envIds` so replay() can walk every env.
+  // WeakMap isn't iterable; we'd otherwise have nothing to replay
+  // against. Holding strong refs here is fine in practice because the
+  // hook lives in the same JS world as the environments and they
+  // share a lifetime — there's no leak across page navigations,
+  // either, since the whole main-world script reloads with the page.
+  const knownEnvs = new Set<RelayEnvironmentLike>();
 
   function publish(env: RelayEnvironmentLike) {
     const envId = idFor(env);
@@ -70,6 +90,9 @@ export function installHook(connection: Connection): void {
   }
 
   function attach(env: RelayEnvironmentLike) {
+    if (knownEnvs.has(env)) return;
+    knownEnvs.add(env);
+
     const envId = idFor(env);
     connection.send({ type: 'environment.registered', envId });
 
@@ -91,5 +114,15 @@ export function installHook(connection: Connection): void {
   g.__RELAY_DEVTOOLS_HOOK__ = {
     isInjected: true,
     registerEnvironment: attach,
+  };
+
+  return {
+    replay() {
+      for (const env of knownEnvs) {
+        const envId = idFor(env);
+        connection.send({ type: 'environment.registered', envId });
+        publish(env);
+      }
+    },
   };
 }

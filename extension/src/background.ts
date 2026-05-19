@@ -1,16 +1,23 @@
 /**
- * Service worker. Routes inspector messages from each tab's content
- * script to that tab's devtools panel.
+ * Service worker. Routes inspector messages between each tab's content
+ * script and the devtools panel attached to that tab.
  *
- *   content.ts (tab N)  →  service worker  →  panel for tab N
+ *   Upstream:   content port (one per tab, opened lazily)
+ *               → panel port (one per panel:<tabId>)
  *
- * The content script connects with name 'content'; the service worker
- * pulls the tab id off `port.sender.tab.id`. The devtools panel
- * connects with name `panel:<tabId>` so we can pair them up.
+ *   Downstream: panel port message
+ *               → chrome.tabs.sendMessage(tabId, ...)
+ *               → content script's chrome.runtime.onMessage
  *
- * If a panel isn't open when a message arrives, the message is dropped.
- * On first-open of devtools, the user can reload the inspected page to
- * replay the initial environment.registered + store.publish messages.
+ * The downstream path doesn't go through the content port — that port
+ * may not be open if the page hasn't done anything Relay-ish yet, and
+ * we still want the panel.hello → replay handshake to land. tabs
+ * messaging works without an active long-lived port.
+ *
+ * Stateful only as long as the worker stays alive; if Chrome
+ * hibernates it the maps reset, but the panel transport reconnects on
+ * disconnect and the content script reopens its port on the next
+ * upstream event, so the chain re-establishes.
  */
 const contentByTab = new Map<number, chrome.runtime.Port>();
 const panelByTab = new Map<number, chrome.runtime.Port>();
@@ -35,6 +42,11 @@ chrome.runtime.onConnect.addListener((port) => {
     if (!Number.isFinite(tabId)) return;
     panelByTab.set(tabId, port);
 
+    port.onMessage.addListener((msg) => {
+      // chrome.tabs.sendMessage returns a Promise; failure (e.g. no
+      // content script in the tab yet) is fine to ignore.
+      chrome.tabs.sendMessage(tabId, msg).catch(() => {});
+    });
     port.onDisconnect.addListener(() => {
       if (panelByTab.get(tabId) === port) panelByTab.delete(tabId);
     });

@@ -26,18 +26,6 @@ export type EnvironmentSnapshot = Readonly<{
   version: number;
 }>;
 
-export type ClientHello = Readonly<{
-  type: 'hello';
-  client: 'core';
-  version: string;
-}>;
-
-export type ServerHello = Readonly<{
-  type: 'hello';
-  client: 'server';
-  version: string;
-}>;
-
 export type EnvironmentRegistered = Readonly<{
   type: 'environment.registered';
   envId: EnvironmentId;
@@ -50,10 +38,20 @@ export type StorePublish = Readonly<{
   records: RecordSource;
 }>;
 
+/**
+ * Sent by the inspector UI when it first connects so the core can
+ * replay environment.registered + store.publish for any envs that
+ * registered before the UI was listening — most commonly the case
+ * when DevTools is opened on a page that was already loaded.
+ */
+export type PanelHello = Readonly<{
+  type: 'panel.hello';
+}>;
+
 /** Messages flowing from the user's app → inspector UI. */
-export type CoreToUi = ClientHello | EnvironmentRegistered | StorePublish;
+export type CoreToUi = EnvironmentRegistered | StorePublish;
 
 /** Messages flowing from the inspector UI → user's app. */
-export type UiToCore = ServerHello;
+export type UiToCore = PanelHello;
 
 export type WireMessage = CoreToUi | UiToCore;

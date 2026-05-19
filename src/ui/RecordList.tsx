@@ -93,6 +93,48 @@ export function RecordList({ records, selectedId, onPreview, onPin }: Props) {
     if (el != null) el.scrollIntoView({ block: 'nearest' });
   }, [selectedId]);
 
+  // Flat, ordered list of currently-visible record ids — i.e. the
+  // ids shown to the user in the left pane (groups in display order,
+  // collapsed groups skipped). Up/Down arrows step through this list.
+  const visibleIds = useMemo(() => {
+    const out: string[] = [];
+    for (const g of groups) {
+      if (effectivelyCollapsed.has(g.typename)) continue;
+      out.push(...g.ids);
+    }
+    return out;
+  }, [groups, effectivelyCollapsed]);
+
+  // Up/Down arrows navigate between visible records. Suppressed when
+  // focus is in an input (the search box) so arrow keys keep their
+  // text-cursor behavior there.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) {
+        return;
+      }
+      if (visibleIds.length === 0) return;
+
+      e.preventDefault();
+      const cur = selectedId != null ? visibleIds.indexOf(selectedId) : -1;
+      const next =
+        e.key === 'ArrowDown'
+          ? cur < 0
+            ? 0
+            : Math.min(cur + 1, visibleIds.length - 1)
+          : cur < 0
+            ? visibleIds.length - 1
+            : Math.max(cur - 1, 0);
+      if (next !== cur) onPreview(visibleIds[next]!);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [visibleIds, selectedId, onPreview]);
+
   function toggle(typename: string) {
     setCollapsed((prev) => {
       const next = new Set(prev);

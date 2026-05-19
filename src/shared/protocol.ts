@@ -43,9 +43,17 @@ export type StorePublish = Readonly<{
  * replay environment.registered + store.publish for any envs that
  * registered before the UI was listening — most commonly the case
  * when DevTools is opened on a page that was already loaded.
+ *
+ * `knownVersions` is the panel's current view of each env's version,
+ * if any. The core uses it to skip re-sending snapshots that haven't
+ * changed since the panel last saw them — important on every
+ * reconnect after a service-worker hibernation cycle, where the
+ * unconditional replay would otherwise re-serialize the entire store
+ * even though nothing's moved.
  */
 export type PanelHello = Readonly<{
   type: 'panel.hello';
+  knownVersions?: Readonly<{ [envId: string]: number }>;
 }>;
 
 /** Messages flowing from the user's app → inspector UI. */

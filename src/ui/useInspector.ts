@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type {
   CoreToUi,
   EnvironmentId,
@@ -24,6 +24,17 @@ export function useInspector(transport: IncomingTransport): InspectorState {
     ReadonlyMap<EnvironmentId, EnvironmentSnapshot>
   >(new Map());
 
+  // Mirror of the latest environments map kept in a ref so the
+  // transport's getKnownVersions callback (invoked on reconnect)
+  // sees current state without us having to re-subscribe on every
+  // version bump. Synced in an effect rather than during render — the
+  // transport invokes getKnownVersions asynchronously, so the
+  // microscopic gap between render commit and effect run is harmless.
+  const environmentsRef = useRef(environments);
+  useEffect(() => {
+    environmentsRef.current = environments;
+  }, [environments]);
+
   useEffect(() => {
     return transport.subscribe({
       onStatus: setStatus,
@@ -47,6 +58,13 @@ export function useInspector(transport: IncomingTransport): InspectorState {
           }
           return next;
         });
+      },
+      getKnownVersions() {
+        const out: { [envId: string]: number } = {};
+        for (const [envId, snap] of environmentsRef.current) {
+          if (snap.version > 0) out[envId] = snap.version;
+        }
+        return out;
       },
     });
   }, [transport]);

@@ -4,34 +4,45 @@
  * long-lived chrome.runtime Port to the service worker. The service
  * worker routes onward to the devtools panel for this tab.
  *
- * We open the Port lazily, on the first inspector message we see —
- * pages without Relay never wake the service worker, and Chrome can
- * GC us cleanly.
+ * We open the Port lazily on the first inspector message we see, and
+ * retry once if the first send fails — Chrome may have hibernated the
+ * service worker between events, invalidating the cached port. The
+ * retry call wakes it back up.
  */
-import { isEnvelope } from './envelope';
+import { isEnvelope, type Envelope } from './envelope';
 
 let port: chrome.runtime.Port | null = null;
 
-function ensurePort(): chrome.runtime.Port {
-  if (port != null) return port;
-  port = chrome.runtime.connect({ name: 'content' });
-  port.onDisconnect.addListener(() => {
-    port = null;
+function openPort(): chrome.runtime.Port {
+  const fresh = chrome.runtime.connect({ name: 'content' });
+  fresh.onDisconnect.addListener(() => {
+    if (port === fresh) port = null;
   });
-  return port;
+  return fresh;
+}
+
+function send(envelope: Envelope): void {
+  if (port == null) port = openPort();
+  try {
+    port.postMessage(envelope.msg);
+    return;
+  } catch {
+    port = null;
+  }
+  // Single retry: reopens against a freshly-revived service worker.
+  try {
+    port = openPort();
+    port.postMessage(envelope.msg);
+  } catch {
+    port = null;
+  }
 }
 
 window.addEventListener('message', (event: MessageEvent) => {
-  // postMessage broadcasts to every listener on this window. Filter
-  // to messages from this same window (cross-frame would have a
-  // different `source`) that carry our envelope tag.
+  // postMessage broadcasts to every listener on this window. Filter to
+  // messages from this same window (cross-frame would have a different
+  // `source`) that carry our envelope tag.
   if (event.source !== window) return;
   if (!isEnvelope(event.data)) return;
-  try {
-    ensurePort().postMessage(event.data.msg);
-  } catch {
-    // Service worker can be torn down between messages; the next
-    // attempt will re-open the port.
-    port = null;
-  }
+  send(event.data);
 });

@@ -8,42 +8,66 @@ import type { IncomingTransport } from '~/ui/transport';
  *                    ──[chrome.runtime.Port]──►  service worker
  *                    ──[chrome.runtime.Port]──►  panel (this)
  *
- * Opens a long-lived port to the service worker named with the
- * inspected tab id (so the service worker can pair us with the
- * content script for the same tab).
+ * Opens a long-lived port to the service worker, named with the
+ * inspected tab id so the worker can pair us with the content script
+ * for the same tab.
+ *
+ * The port disconnects whenever Chrome tears the service worker down
+ * (MV3 hibernates idle workers after ~30s) — we reconnect on a 1s
+ * backoff so the panel doesn't stick on 'closed' forever. The
+ * reconnect itself wakes the worker; the next event from the content
+ * script will reopen its own port lazily and the chain re-establishes.
  */
 export function createRuntimeTransport(): IncomingTransport {
   return {
     subscribe(handler) {
       const tabId = chrome.devtools.inspectedWindow.tabId;
-      handler.onStatus('connecting');
+      let cancelled = false;
+      let port: chrome.runtime.Port | null = null;
+      let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
-      let port: chrome.runtime.Port;
-      try {
-        port = chrome.runtime.connect({ name: `panel:${tabId}` });
-      } catch {
-        handler.onStatus('closed');
-        return () => {};
-      }
-
-      handler.onStatus('open');
-
-      const onMessage = (msg: unknown) => {
-        // Service worker only forwards our protocol messages; trust
-        // the type narrowing here.
-        handler.onMessage(msg as CoreToUi);
+      const scheduleRetry = () => {
+        if (cancelled || retryTimer != null) return;
+        retryTimer = setTimeout(() => {
+          retryTimer = null;
+          connect();
+        }, 1000);
       };
-      port.onMessage.addListener(onMessage);
 
-      const onDisconnect = () => {
-        handler.onStatus('closed');
+      const connect = () => {
+        if (cancelled) return;
+        handler.onStatus('connecting');
+        try {
+          port = chrome.runtime.connect({ name: `panel:${tabId}` });
+        } catch {
+          handler.onStatus('closed');
+          scheduleRetry();
+          return;
+        }
+
+        handler.onStatus('open');
+
+        port.onMessage.addListener((msg: unknown) => {
+          handler.onMessage(msg as CoreToUi);
+        });
+
+        port.onDisconnect.addListener(() => {
+          port = null;
+          if (cancelled) return;
+          handler.onStatus('closed');
+          scheduleRetry();
+        });
       };
-      port.onDisconnect.addListener(onDisconnect);
+
+      connect();
 
       return () => {
-        port.onMessage.removeListener(onMessage);
-        port.onDisconnect.removeListener(onDisconnect);
-        port.disconnect();
+        cancelled = true;
+        if (retryTimer != null) {
+          clearTimeout(retryTimer);
+          retryTimer = null;
+        }
+        port?.disconnect();
       };
     },
   };

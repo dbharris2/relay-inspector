@@ -23,8 +23,18 @@ function getWebSocketUrl(): string {
 
 const transport = createWebSocketTransport(getWebSocketUrl());
 
+const setupHint = (
+  <>
+    Load{' '}
+    <code className="rounded bg-zinc-900 px-1.5 py-0.5 text-zinc-300">
+      &lt;script src="http://localhost:8097/core.js"&gt;
+    </code>{' '}
+    in your dev app.
+  </>
+);
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App transport={transport} />
+    <App transport={transport} setupHint={setupHint} />
   </StrictMode>,
 );

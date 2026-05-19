@@ -2,27 +2,49 @@ import type { CoreToUi } from '~/shared/protocol';
 import type { IncomingTransport } from '~/ui/transport';
 
 /**
- * Inspector messages from the user's page reach the devtools panel via
+ * Devtools-panel side of the message chain:
  *
- *   page  ──[window.postMessage]──►  content script
- *         ──[chrome.runtime.connect port]──►  service worker
- *         ──[chrome.runtime.connect port]──►  devtools panel
+ *   page main world  ──[window.postMessage]──►  content script
+ *                    ──[chrome.runtime.Port]──►  service worker
+ *                    ──[chrome.runtime.Port]──►  panel (this)
  *
- * This transport is the panel-side endpoint of that chain. The panel
- * opens a long-lived port to the service worker, names it with the
- * inspected tab id, then waits for messages.
- *
- * For now this is a stub that reports a steady 'closed' status — the
- * service-worker routing lands in the next change. It exists so the
- * panel can render and the manifest/extension scaffold can be verified
- * end-to-end in Chrome.
+ * Opens a long-lived port to the service worker named with the
+ * inspected tab id (so the service worker can pair us with the
+ * content script for the same tab).
  */
 export function createRuntimeTransport(): IncomingTransport {
   return {
     subscribe(handler) {
-      handler.onStatus('closed');
-      void (handler.onMessage satisfies (msg: CoreToUi) => void);
-      return () => {};
+      const tabId = chrome.devtools.inspectedWindow.tabId;
+      handler.onStatus('connecting');
+
+      let port: chrome.runtime.Port;
+      try {
+        port = chrome.runtime.connect({ name: `panel:${tabId}` });
+      } catch {
+        handler.onStatus('closed');
+        return () => {};
+      }
+
+      handler.onStatus('open');
+
+      const onMessage = (msg: unknown) => {
+        // Service worker only forwards our protocol messages; trust
+        // the type narrowing here.
+        handler.onMessage(msg as CoreToUi);
+      };
+      port.onMessage.addListener(onMessage);
+
+      const onDisconnect = () => {
+        handler.onStatus('closed');
+      };
+      port.onDisconnect.addListener(onDisconnect);
+
+      return () => {
+        port.onMessage.removeListener(onMessage);
+        port.onDisconnect.removeListener(onDisconnect);
+        port.disconnect();
+      };
     },
   };
 }

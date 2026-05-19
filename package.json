@@ -15,9 +15,11 @@
     "relay:check": "tsx scripts/relay-integration.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "tsc -b && pnpm run build:ui && pnpm run build:core",
+    "build": "tsc -b && pnpm run build:ui && pnpm run build:core && pnpm run build:extension",
     "build:ui": "vite build",
     "build:core": "vite build --config vite.core.config.ts",
+    "build:extension": "vite build --config extension/vite.config.ts",
+    "dev:extension": "vite --config extension/vite.config.ts",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -30,8 +32,10 @@
     "ws": "^8.20.1"
   },
   "devDependencies": {
+    "@crxjs/vite-plugin": "^2.4.0",
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.0",
+    "@types/chrome": "^0.1.42",
     "@types/node": "^25.8.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

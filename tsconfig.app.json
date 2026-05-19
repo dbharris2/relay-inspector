@@ -21,9 +21,10 @@
     "isolatedModules": true,
     "resolveJsonModule": true,
     "esModuleInterop": true,
+    "types": ["chrome"],
     "paths": {
       "~/*": ["./src/*"]
     }
   },
-  "include": ["src/ui", "src/core", "src/shared"]
+  "include": ["src/ui", "src/core", "src/shared", "extension/src"]
 }

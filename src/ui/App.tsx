@@ -10,6 +10,7 @@ import type { IncomingTransport } from './transport';
 import { RecordList } from './RecordList';
 import { RecordDetails } from './RecordDetails';
 import { TabBar } from './TabBar';
+import * as Tab from './tabReducer';
 
 export type AppProps = {
   /** Where inspector messages come from. WebSocket for the standalone
@@ -21,80 +22,6 @@ export type AppProps = {
    *  the extension tells them to reload the page. */
   setupHint: ReactNode;
 };
-
-/**
- * Tab state. Mirrors VSCode's preview-tab model plus a per-env
- * navigation history (cmd-[ / cmd-] back/forward):
- *
- *   - `tabIds` is the ordered list of every open tab.
- *   - `previewTabId`, if non-null, identifies the single tab in the
- *     "preview" slot. A new preview replaces the existing preview
- *     rather than appending. Double-clicking a preview tab pins it
- *     (clears the slot, tab stays open).
- *   - `activeTabId` is whichever tab the right pane is showing.
- *   - `history` is the navigation trail — every record id the user has
- *     navigated to via row/ref-chip click or tab activation. `historyPos`
- *     indexes into it; back/forward step the index without touching
- *     `history` itself. Closed tabs stay in history and reopen as
- *     preview when navigated back to.
- *
- * Invariants:
- *   - previewTabId, if non-null, is in tabIds.
- *   - activeTabId, if non-null, is in tabIds.
- *   - 0 <= historyPos < history.length, or historyPos === -1 when
- *     history is empty.
- */
-type TabState = {
-  tabIds: readonly string[];
-  previewTabId: string | null;
-  activeTabId: string | null;
-  history: readonly string[];
-  historyPos: number;
-};
-
-const EMPTY_TABS: TabState = {
-  tabIds: [],
-  previewTabId: null,
-  activeTabId: null,
-  history: [],
-  historyPos: -1,
-};
-
-/**
- * Append `id` to history at the current position, truncating any
- * forward entries past it (standard browser behavior). No-op when id
- * already equals the current entry.
- */
-function pushHistory(s: TabState, id: string): TabState {
-  if (s.historyPos >= 0 && s.history[s.historyPos] === id) return s;
-  const trimmed = s.history.slice(0, s.historyPos + 1);
-  return {
-    ...s,
-    history: [...trimmed, id],
-    historyPos: trimmed.length,
-  };
-}
-
-/**
- * Make sure `id` has a tab. If it doesn't, reopen it as preview,
- * replacing the existing preview slot if there is one. Used by back/
- * forward to re-materialize tabs the user previously closed.
- */
-function ensureTabFor(s: TabState, id: string): TabState {
-  if (s.tabIds.includes(id)) return s;
-  if (s.previewTabId != null) {
-    return {
-      ...s,
-      tabIds: s.tabIds.map((x) => (x === s.previewTabId ? id : x)),
-      previewTabId: id,
-    };
-  }
-  return {
-    ...s,
-    tabIds: [...s.tabIds, id],
-    previewTabId: id,
-  };
-}
 
 export function App({ transport, setupHint }: AppProps) {
   const { status, environments } = useInspector(transport);
@@ -113,16 +40,16 @@ export function App({ transport, setupHint }: AppProps) {
   // Tabs are per-env: switching envs leaves each env's tab set alone,
   // so coming back to a previous env restores its tabs. Keyed by envId
   // in a single Map so we never need an effect to reset on env switch.
-  const [tabsByEnv, setTabsByEnv] = useState<ReadonlyMap<string, TabState>>(
+  const [tabsByEnv, setTabsByEnv] = useState<ReadonlyMap<string, Tab.TabState>>(
     new Map(),
   );
   const tabs =
-    (activeEnvId != null ? tabsByEnv.get(activeEnvId) : null) ?? EMPTY_TABS;
+    (activeEnvId != null ? tabsByEnv.get(activeEnvId) : null) ?? Tab.EMPTY_TABS;
 
   const updateTabs = useCallback(
-    (envId: string, fn: (s: TabState) => TabState) => {
+    (envId: string, fn: (s: Tab.TabState) => Tab.TabState) => {
       setTabsByEnv((prev) => {
-        const cur = prev.get(envId) ?? EMPTY_TABS;
+        const cur = prev.get(envId) ?? Tab.EMPTY_TABS;
         const next = fn(cur);
         if (next === cur) return prev;
         const out = new Map(prev);
@@ -136,34 +63,7 @@ export function App({ transport, setupHint }: AppProps) {
   const openRecord = useCallback(
     (id: string, asPreview = true) => {
       if (activeEnvId == null) return;
-      updateTabs(activeEnvId, (s) => {
-        const isOpen = s.tabIds.includes(id);
-        let next: TabState;
-        if (isOpen) {
-          // Already open — activate it. If this is a pin request and
-          // the tab is currently the preview, also clear the slot so
-          // double-clicking a preview row promotes it to pinned.
-          const previewTabId =
-            !asPreview && s.previewTabId === id ? null : s.previewTabId;
-          next = { ...s, activeTabId: id, previewTabId };
-        } else if (asPreview && s.previewTabId != null) {
-          // Replace the existing preview slot in-place.
-          next = {
-            ...s,
-            tabIds: s.tabIds.map((x) => (x === s.previewTabId ? id : x)),
-            previewTabId: id,
-            activeTabId: id,
-          };
-        } else {
-          next = {
-            ...s,
-            tabIds: [...s.tabIds, id],
-            previewTabId: asPreview ? id : s.previewTabId,
-            activeTabId: id,
-          };
-        }
-        return pushHistory(next, id);
-      });
+      updateTabs(activeEnvId, (s) => Tab.openRecord(s, id, asPreview));
     },
     [activeEnvId, updateTabs],
   );
@@ -171,10 +71,7 @@ export function App({ transport, setupHint }: AppProps) {
   const activateTab = useCallback(
     (id: string) => {
       if (activeEnvId == null) return;
-      updateTabs(activeEnvId, (s) => {
-        if (s.activeTabId === id) return s;
-        return pushHistory({ ...s, activeTabId: id }, id);
-      });
+      updateTabs(activeEnvId, (s) => Tab.activateTab(s, id));
     },
     [activeEnvId, updateTabs],
   );
@@ -182,9 +79,7 @@ export function App({ transport, setupHint }: AppProps) {
   const pinTab = useCallback(
     (id: string) => {
       if (activeEnvId == null) return;
-      updateTabs(activeEnvId, (s) =>
-        s.previewTabId === id ? { ...s, previewTabId: null } : s,
-      );
+      updateTabs(activeEnvId, (s) => Tab.pinTab(s, id));
     },
     [activeEnvId, updateTabs],
   );
@@ -192,51 +87,19 @@ export function App({ transport, setupHint }: AppProps) {
   const closeTab = useCallback(
     (id: string) => {
       if (activeEnvId == null) return;
-      updateTabs(activeEnvId, (s) => {
-        const idx = s.tabIds.indexOf(id);
-        if (idx === -1) return s;
-        const tabIds = s.tabIds.filter((x) => x !== id);
-        const previewTabId = s.previewTabId === id ? null : s.previewTabId;
-        // Prefer the tab to the right, fall back left, otherwise none.
-        // Closing doesn't push to history — it's destructive, not a
-        // navigation. History entries for the closed id stay so back
-        // can reopen it as preview.
-        const activeTabId =
-          s.activeTabId === id
-            ? (tabIds[idx] ?? tabIds[idx - 1] ?? null)
-            : s.activeTabId;
-        return { ...s, tabIds, previewTabId, activeTabId };
-      });
+      updateTabs(activeEnvId, (s) => Tab.closeTab(s, id));
     },
     [activeEnvId, updateTabs],
   );
 
   const goBack = useCallback(() => {
     if (activeEnvId == null) return;
-    updateTabs(activeEnvId, (s) => {
-      if (s.historyPos <= 0) return s;
-      const pos = s.historyPos - 1;
-      const target = s.history[pos]!;
-      return {
-        ...ensureTabFor(s, target),
-        activeTabId: target,
-        historyPos: pos,
-      };
-    });
+    updateTabs(activeEnvId, Tab.goBack);
   }, [activeEnvId, updateTabs]);
 
   const goForward = useCallback(() => {
     if (activeEnvId == null) return;
-    updateTabs(activeEnvId, (s) => {
-      if (s.historyPos >= s.history.length - 1) return s;
-      const pos = s.historyPos + 1;
-      const target = s.history[pos]!;
-      return {
-        ...ensureTabFor(s, target),
-        activeTabId: target,
-        historyPos: pos,
-      };
-    });
+    updateTabs(activeEnvId, Tab.goForward);
   }, [activeEnvId, updateTabs]);
 
   const canGoBack = tabs.historyPos > 0;

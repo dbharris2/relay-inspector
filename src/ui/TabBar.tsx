@@ -12,6 +12,10 @@ export type Props = {
   onSelect: (id: string) => void;
   onPin: (id: string) => void;
   onClose: (id: string) => void;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  onGoBack: () => void;
+  onGoForward: () => void;
 };
 
 export function TabBar({
@@ -22,6 +26,10 @@ export function TabBar({
   onSelect,
   onPin,
   onClose,
+  canGoBack,
+  canGoForward,
+  onGoBack,
+  onGoForward,
 }: Props) {
   // Track the scroll container in state (not a ref) so the wheel and
   // edge-tracking effects re-run when it actually mounts.
@@ -38,6 +46,18 @@ export function TabBar({
 
   return (
     <div className="flex min-w-0 items-stretch border-b border-zinc-800 bg-zinc-900">
+      <NavButton
+        direction="back"
+        disabled={!canGoBack}
+        onClick={onGoBack}
+        shortcut="⌘["
+      />
+      <NavButton
+        direction="forward"
+        disabled={!canGoForward}
+        onClick={onGoForward}
+        shortcut="⌘]"
+      />
       {hasOverflow && (
         <ArrowButton
           direction="left"
@@ -129,6 +149,33 @@ function ArrowButton({
       }`}
     >
       {direction === 'left' ? '‹' : '›'}
+    </button>
+  );
+}
+
+function NavButton({
+  direction,
+  disabled,
+  onClick,
+  shortcut,
+}: {
+  direction: 'back' | 'forward';
+  disabled: boolean;
+  onClick: () => void;
+  shortcut: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={`${direction === 'back' ? 'Back' : 'Forward'} (${shortcut})`}
+      className={`flex w-7 shrink-0 items-center justify-center border-r border-zinc-800 text-zinc-400 ${
+        disabled
+          ? 'cursor-default opacity-30'
+          : 'hover:bg-zinc-800/80 hover:text-zinc-100'
+      }`}
+    >
+      {direction === 'back' ? '◂' : '▸'}
     </button>
   );
 }

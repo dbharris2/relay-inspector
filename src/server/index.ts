@@ -1,7 +1,7 @@
 /**
  * Local dev server for the inspector.
  *
- *   - HTTP serves the built UI, the core.js bundle, and a demo page.
+ *   - HTTP serves the built UI and the core.js bundle.
  *   - WebSocket at /ws relays messages from "core" clients (i.e. the
  *     user's app) to "ui" clients (the inspector tab).
  *
@@ -24,8 +24,6 @@ const ROOT = resolve(HERE, '..', '..');
 
 const UI_DIR = join(ROOT, 'dist', 'ui');
 const CORE_FILE = join(ROOT, 'dist', 'core', 'core.js');
-const DEMO_DIR = join(ROOT, 'fixtures', 'demo');
-const RELAY_DEMO_DIR = join(ROOT, 'fixtures', 'relay-demo');
 
 const MIME: Readonly<Record<string, string>> = {
   '.html': 'text/html; charset=utf-8',
@@ -57,30 +55,28 @@ async function serveFile(
   }
 }
 
-async function serveStatic(
+async function serveUi(
   res: import('node:http').ServerResponse,
-  dir: string,
   urlPath: string,
-  fallback: string,
 ): Promise<void> {
   const cleaned = normalize(urlPath).replace(/^[/\\]+/, '');
-  const candidate = cleaned === '' ? fallback : cleaned;
-  const filePath = join(dir, candidate);
-  if (!filePath.startsWith(dir)) {
+  const candidate = cleaned === '' ? 'index.html' : cleaned;
+  const filePath = join(UI_DIR, candidate);
+  if (!filePath.startsWith(UI_DIR)) {
     res.writeHead(403).end('Forbidden');
     return;
   }
   try {
     const stats = await stat(filePath);
     if (stats.isDirectory()) {
-      await serveFile(res, join(filePath, fallback));
+      await serveFile(res, join(filePath, 'index.html'));
     } else {
       await serveFile(res, filePath);
     }
   } catch {
-    // SPA fallback: serve index.html for unknown paths under UI_DIR.
-    if (dir === UI_DIR) await serveFile(res, join(dir, fallback));
-    else res.writeHead(404).end('Not found');
+    // SPA fallback: any unknown path serves index.html so client-side
+    // routing can take over.
+    await serveFile(res, join(UI_DIR, 'index.html'));
   }
 }
 
@@ -91,20 +87,7 @@ const http = createServer((req, res) => {
     void serveFile(res, CORE_FILE);
     return;
   }
-  if (url === '/demo' || url.startsWith('/demo/')) {
-    void serveStatic(res, DEMO_DIR, url.replace(/^\/demo/, ''), 'index.html');
-    return;
-  }
-  if (url === '/relay-demo' || url.startsWith('/relay-demo/')) {
-    void serveStatic(
-      res,
-      RELAY_DEMO_DIR,
-      url.replace(/^\/relay-demo/, ''),
-      'index.html',
-    );
-    return;
-  }
-  void serveStatic(res, UI_DIR, url, 'index.html');
+  void serveUi(res, url);
 });
 
 const wss = new WebSocketServer({ server: http, path: '/ws' });
@@ -135,10 +118,8 @@ wss.on('connection', (socket) => {
 http.listen(PORT, () => {
   console.log(
     `[relay-inspector] listening on http://localhost:${PORT}\n` +
-      `  UI:          http://localhost:${PORT}/\n` +
-      `  Fake demo:   http://localhost:${PORT}/demo/\n` +
-      `  Relay demo:  http://localhost:${PORT}/relay-demo/\n` +
-      `  Core:        http://localhost:${PORT}/core.js\n` +
-      `  WS:          ws://localhost:${PORT}/ws`,
+      `  UI:    http://localhost:${PORT}/\n` +
+      `  Core:  http://localhost:${PORT}/core.js\n` +
+      `  WS:    ws://localhost:${PORT}/ws`,
   );
 });

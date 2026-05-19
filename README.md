@@ -2,10 +2,10 @@
 
 A read-only visualization tool for [Relay](https://relay.dev) stores. Renders
 the normalized record cache as a navigable tree, streamed live from your running
-app over WebSocket. Graph view is the next planned feature.
+app over WebSocket.
 
 > Status: usable end-to-end. Tree view with VSCode-style preview tabs,
-> wheel-scrollable tab bar, and live snapshot updates. No graph view yet.
+> wheel-scrollable tab bar, and live snapshot updates.
 
 ## Architecture
 
@@ -18,9 +18,9 @@ your app ─[<script src=…/core.js>]─► core ─[ws://localhost:8097]─►
   attaches to every Relay `Environment` that registers with it, sanitizes
   the `RecordSource` on every `store.publish`, and ships snapshots over
   WebSocket. ~2 KB minified.
-- **`src/server/`** — Node process serving the UI over HTTP, the core
-  bundle at `/core.js`, and demo fixtures. Relays WebSocket messages
-  between core clients and UI clients.
+- **`src/server/`** — Node process serving the UI over HTTP and the
+  core bundle at `/core.js`. Relays WebSocket messages between core
+  clients and UI clients.
 - **`src/ui/`** — the React inspector. Left pane: searchable record list
   grouped by `__typename` with sticky group headers. Right pane: tabbed
   record details with `__ref`/`__refs` chips that navigate between

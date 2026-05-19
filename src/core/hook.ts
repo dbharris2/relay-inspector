@@ -43,9 +43,17 @@ type GlobalWithHook = typeof globalThis & {
 };
 
 export type HookHandle = {
-  /** Re-emit environment.registered + store.publish for every env
-   *  currently known to the hook. No-op if no envs have registered. */
-  replay(): void;
+  /**
+   * Re-emit environment.registered for every env currently known to
+   * the hook, plus a store.publish for any env whose current version
+   * doesn't match the panel's recorded version in `knownVersions`.
+   * No-op if no envs have registered.
+   *
+   * The version-aware skip lets reconnects after a service-worker
+   * hibernation cycle avoid re-serializing snapshots that haven't
+   * changed since the panel last saw them.
+   */
+  replay(knownVersions?: Readonly<{ [envId: string]: number }>): void;
 };
 
 const NOOP_HANDLE: HookHandle = { replay: () => {} };
@@ -75,18 +83,29 @@ export function installHook(connection: Connection): HookHandle {
   // either, since the whole main-world script reloads with the page.
   const knownEnvs = new Set<RelayEnvironmentLike>();
 
-  function publish(env: RelayEnvironmentLike) {
+  /**
+   * Send the current snapshot for `env`. `bumpVersion` is true for
+   * fresh store.publish events (the version counter advances); false
+   * for replays (we re-emit the same version we last sent so the
+   * panel doesn't redundantly process the same data).
+   */
+  function emitSnapshot(env: RelayEnvironmentLike, bumpVersion: boolean) {
     const envId = idFor(env);
     const source = env.getStore?.().getSource?.();
     if (source == null) return;
-    const version = (versions.get(envId) ?? 0) + 1;
-    versions.set(envId, version);
+    const prev = versions.get(envId) ?? 0;
+    const version = bumpVersion ? prev + 1 : prev;
+    if (bumpVersion) versions.set(envId, version);
     connection.send({
       type: 'store.publish',
       envId,
       version,
       records: sanitizeRecordSource(source),
     });
+  }
+
+  function publish(env: RelayEnvironmentLike) {
+    emitSnapshot(env, true);
   }
 
   function attach(env: RelayEnvironmentLike) {
@@ -117,11 +136,20 @@ export function installHook(connection: Connection): HookHandle {
   };
 
   return {
-    replay() {
+    replay(knownVersions) {
       for (const env of knownEnvs) {
         const envId = idFor(env);
         connection.send({ type: 'environment.registered', envId });
-        publish(env);
+
+        const current = versions.get(envId) ?? 0;
+        // Nothing to send if we've never published a snapshot for
+        // this env (e.g. its store was missing at attach time).
+        if (current === 0) continue;
+        // Panel already has the current version — skip the heavy
+        // sanitize + serialize + send.
+        if (knownVersions?.[envId] === current) continue;
+
+        emitSnapshot(env, false);
       }
     },
   };

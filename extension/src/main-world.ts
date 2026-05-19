@@ -37,7 +37,8 @@ const { replay } = installHook({
 window.addEventListener('message', (event: MessageEvent) => {
   if (event.source !== window) return;
   if (!isDownstreamEnvelope(event.data)) return;
-  if (event.data.msg.type === 'panel.hello') {
-    replay();
+  const msg = event.data.msg;
+  if (msg.type === 'panel.hello') {
+    replay(msg.knownVersions);
   }
 });

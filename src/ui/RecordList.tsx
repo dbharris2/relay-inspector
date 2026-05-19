@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RecordSource } from '~/shared/protocol';
 import { getRecordLabel, shortenId } from './labels';
+import { buildGroups, type RecordGroup } from './recordGroups';
 
 export type Props = {
   records: RecordSource;
@@ -10,43 +11,6 @@ export type Props = {
   /** Double click — opens the record as a pinned (non-preview) tab. */
   onPin: (id: string) => void;
 };
-
-type Group = {
-  typename: string;
-  ids: string[];
-};
-
-function buildGroups(records: RecordSource, search: string): Group[] {
-  const q = search.trim().toLowerCase();
-  const byType = new Map<string, string[]>();
-
-  for (const [id, record] of Object.entries(records)) {
-    if (record == null) continue;
-    const typename = record.__typename ?? '(unknown)';
-
-    if (q.length > 0) {
-      const label = getRecordLabel(record);
-      const haystack = `${id} ${typename} ${label ?? ''}`.toLowerCase();
-      if (!haystack.includes(q)) continue;
-    }
-
-    const list = byType.get(typename);
-    if (list) list.push(id);
-    else byType.set(typename, [id]);
-  }
-
-  const groups: Group[] = [];
-  for (const [typename, ids] of byType) {
-    ids.sort((a, b) => {
-      const la = getRecordLabel(records[a]) ?? a;
-      const lb = getRecordLabel(records[b]) ?? b;
-      return la.localeCompare(lb);
-    });
-    groups.push({ typename, ids });
-  }
-  groups.sort((a, b) => a.typename.localeCompare(b.typename));
-  return groups;
-}
 
 export function RecordList({ records, selectedId, onPreview, onPin }: Props) {
   const [search, setSearch] = useState('');
@@ -195,7 +159,7 @@ function Group({
   onPin,
   registerRow,
 }: {
-  group: Group;
+  group: RecordGroup;
   records: RecordSource;
   collapsed: boolean;
   onToggle: () => void;

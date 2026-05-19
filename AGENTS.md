@@ -14,8 +14,7 @@ Three pieces, all in one repo:
   registered through that hook, captures `store.publish` events, and
   ships sanitized snapshots over WebSocket.
 - **server** (`src/server/`) — Node HTTP + WebSocket process serving the
-  built UI, the core bundle, and demo fixtures; relays WS messages
-  between cores and UIs.
+  built UI and the core bundle; relays WS messages between cores and UIs.
 - **ui** (`src/ui/`) — React app rendered in a browser tab. Two-pane
   layout: record list + record details with navigable refs.
 
@@ -123,9 +122,6 @@ The regression test for this lives in `src/core/sanitize.test.ts`.
 .
 ├── .github/workflows/ci.yml   # GitHub Actions
 ├── bin.ts                     # CLI entry — boots server + opens browser
-├── fixtures/
-│   ├── demo/                  # fake Relay env, useful for UI iteration
-│   └── relay-demo/            # real relay-runtime via esm.sh
 ├── scripts/
 │   ├── e2e-smoke.ts           # WS round-trip
 │   └── relay-integration.ts   # real relay-runtime in Node — pnpm relay:check
@@ -146,18 +142,21 @@ For visible UI work:
 1. `pnpm dev:server` (terminal 1) — serves `/core.js` + WS on `:8097`.
 2. `pnpm dev` (terminal 2) — Vite UI on `:5173` with HMR.
 3. Open `http://localhost:5173/` for the inspector.
-4. Open `http://localhost:8097/relay-demo/` to drive snapshot events
-   from a real Relay environment.
+4. Point a real Relay app at `http://localhost:8097/core.js` via a
+   `<script>` tag in dev to drive snapshot events.
 
 For core/sanitizer changes, `pnpm relay:check` is the fastest feedback
 loop — runs the full pipeline in Node in ~1s.
 
 ## Things not in scope (yet)
 
-- Graph view (planned next). `@xyflow/react` is installed.
 - Light mode. Dark only. Tokens not extracted yet; do that step before
   shipping light.
 - npm-installable CLI (`npx relay-inspector`). The CLI runs from source
   via `tsx`; bundling is deferred.
 - Browser extension. We deliberately chose the script-tag + standalone
   UI route instead.
+- Graph view. A literal "render every record as a node" view of a real
+  Relay store is a hairball at scale and we decided not to build it.
+  More targeted forms (neighborhood view of one record, incoming-refs
+  index, snapshot diff, connection visualizer) are still on the table.

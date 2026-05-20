@@ -5,11 +5,11 @@
  *
  * `panel.html` is a registered Vite entry (extension/vite.config.ts's
  * rollupOptions.input), so it gets emitted at the extension root and
- * Chrome resolves the relative path from there.
+ * Chrome resolves the relative path from there. The icon at
+ * icons/icon-32.png ships alongside via the manifest's `icons` field.
  */
 chrome.devtools.panels.create(
   'Relay Inspector',
-  // No custom icon yet; Chrome shows a default placeholder.
-  '',
+  'icons/icon-32.png',
   'panel.html',
 );

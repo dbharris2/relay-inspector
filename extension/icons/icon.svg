@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Relay Inspector">
+  <!-- Background: indigo rounded square. Sits behind the panel icon
+       in Chrome's DevTools tab strip, the chrome://extensions card,
+       and the Web Store listing. -->
+  <rect width="128" height="128" rx="24" fill="#312e81"/>
+
+  <!-- Three edges from a central node to satellites — reads as
+       "normalized record graph" without leaning on existing brand
+       language. Thicker stroke than usual so it remains legible at
+       the 16x16 toolbar size. -->
+  <g stroke="#a78bfa" stroke-width="8" stroke-linecap="round" fill="none">
+    <line x1="64" y1="64" x2="64" y2="24"/>
+    <line x1="64" y1="64" x2="26" y2="94"/>
+    <line x1="64" y1="64" x2="102" y2="94"/>
+  </g>
+
+  <!-- Four nodes. Center is larger to suggest hierarchy / a root. -->
+  <g fill="#ede9fe">
+    <circle cx="64" cy="64" r="16"/>
+    <circle cx="64" cy="24" r="11"/>
+    <circle cx="26" cy="94" r="11"/>
+    <circle cx="102" cy="94" r="11"/>
+  </g>
+</svg>

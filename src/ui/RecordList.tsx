@@ -201,7 +201,13 @@ function Group({
                 ref={(el) => registerRow(id, el)}
                 onClick={() => onPreview(id)}
                 onDoubleClick={() => onPin(id)}
-                className={`flex w-full select-none flex-col gap-0.5 px-3 py-1 text-left text-xs ${
+                // scroll-mt-8 keeps scrollIntoView({block:'nearest'})
+                // from parking this row underneath the sticky group
+                // header — the browser treats the row as starting 2rem
+                // above its real position when calculating scroll, so
+                // the row lands just below the header instead of behind
+                // it.
+                className={`flex w-full scroll-mt-8 select-none flex-col gap-0.5 px-3 py-1 text-left text-xs ${
                   isSelected
                     ? 'bg-sky-900/40 text-sky-100'
                     : 'text-zinc-300 hover:bg-zinc-900'

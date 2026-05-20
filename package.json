@@ -1,9 +1,9 @@
 {
   "name": "relay-inspector",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Read-only Relay store explorer with tree and graph views",
+  "description": "Read-only inspector for Relay normalized stores.",
   "bin": {
     "relay-inspector": "./dist/bin.js"
   },
@@ -20,6 +20,7 @@
     "build:core": "vite build --config vite.core.config.ts",
     "build:extension": "vite build --config extension/vite.config.ts",
     "dev:extension": "vite --config extension/vite.config.ts",
+    "package:extension": "tsx scripts/package-extension.ts",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",

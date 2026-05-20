@@ -2,7 +2,8 @@
   "manifest_version": 3,
   "name": "Relay Inspector",
   "description": "Read-only inspector for Relay normalized stores.",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "homepage_url": "https://github.com/dbharris2/relay-inspector",
   "minimum_chrome_version": "120",
   "icons": {
     "16": "icons/icon-16.png",

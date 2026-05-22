@@ -18,6 +18,19 @@ Ships in two shapes:
 > wheel-scrollable tab bar, sticky type-group headers, live snapshot
 > updates.
 
+## Repo layout
+
+This is a pnpm-workspace monorepo. The interesting code lives under `packages/`:
+
+| Package | Purpose |
+| --- | --- |
+| [`@relay-inspector/core`](packages/core) | Relay hook + sanitizer + wire-protocol types. Builds the `core.js` IIFE the standalone deploy serves at `/core.js`. |
+| [`@relay-inspector/ui`](packages/ui) | React inspector, consumed as a source-only library by both deploys. |
+| [`@relay-inspector/server`](packages/server) | Node HTTP + WebSocket server, the `relay-inspector` CLI, and the standalone web entry. |
+| [`@relay-inspector/extension`](packages/extension) | Chrome extension (MV3) — the primary deploy. |
+
+Each package has its own README with package-specific instructions.
+
 ## Architecture
 
 ```
@@ -33,17 +46,19 @@ Ships in two shapes:
   devtools panel (UI)
 ```
 
-- **`src/core/`** — Relay hook + sanitizer. Used in **both** deploys:
-  bundled into `core.js` (~2 KB) for the standalone deploy, and imported
-  by `extension/src/main-world.ts` for the extension deploy.
-- **`src/ui/`** — React inspector. Identical in both deploys. Takes an
-  `IncomingTransport` (see `src/ui/transport.ts`) so it doesn't care
-  whether messages arrive over a WebSocket or a `chrome.runtime.Port`.
-- **`src/server/`** — Node HTTP + WebSocket server. Standalone-only.
-- **`src/shared/protocol.ts`** — wire types shared by both producers and
-  consumers.
-- **`extension/`** — manifest, devtools page, panel entry, content
-  scripts (one ISOLATED, one MAIN), service worker, runtime transport.
+- **`@relay-inspector/core`** (`packages/core/`) — Relay hook + sanitizer +
+  protocol types. Used in **both** deploys: bundled into `core.js` (~2 KB)
+  for the standalone deploy, and imported by `packages/extension/src/main-world.ts`
+  for the extension deploy.
+- **`@relay-inspector/ui`** (`packages/ui/`) — React inspector. Identical
+  in both deploys. Takes an `IncomingTransport` (see
+  `packages/ui/src/transport.ts`) so it doesn't care whether messages
+  arrive over a WebSocket or a `chrome.runtime.Port`.
+- **`@relay-inspector/server`** (`packages/server/`) — Node HTTP +
+  WebSocket server, the `relay-inspector` CLI, and the standalone web entry.
+- **`@relay-inspector/extension`** (`packages/extension/`) — manifest,
+  devtools page, panel entry, content scripts (one ISOLATED, one MAIN),
+  service worker, runtime transport.
 
 ## Development
 
@@ -82,10 +97,10 @@ content scripts and service worker still need an "Update" click in
 ### Building
 
 ```sh
-pnpm build              # everything: UI + core + extension
-pnpm build:ui           # standalone UI only
-pnpm build:core         # standalone core.js bundle only
-pnpm build:extension    # Chrome extension only → dist/extension/
+pnpm build              # everything: core.js + standalone UI + extension
+pnpm build:core         # core.js IIFE → packages/core/dist/core.js
+pnpm build:ui           # standalone UI    → packages/server/dist/
+pnpm build:extension    # Chrome extension → packages/extension/dist/
 ```
 
 ## Using it (Chrome extension)
@@ -94,7 +109,7 @@ For developers building from source:
 
 1. `pnpm install && pnpm build:extension`.
 2. Open `chrome://extensions`, enable **Developer mode**.
-3. Click **Load unpacked**, pick `dist/extension/`.
+3. Click **Load unpacked**, pick `packages/extension/dist/`.
 
 For anyone else — grab a pre-built `.zip` from the latest
 [GitHub release](https://github.com/dbharris2/relay-inspector/releases),

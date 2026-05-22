@@ -18,10 +18,13 @@ import { sanitizeRecordSource } from './sanitize';
  * Important: `store.publish` events flow through `store.__log`, not
  * `environment.__log`. We patch the store's log to catch them.
  *
- * Returns a handle exposing `replay()`, used by the Chrome-extension
- * deploy to re-emit environment.registered + store.publish for every
- * known env when a freshly-opened devtools panel sends `panel.hello`.
- * The standalone deploy ignores the handle.
+ * Returns a handle the Chrome-extension deploy uses to gate work on
+ * panel presence: `setPanelConnected(true)` lets sanitize+send run
+ * (and `replay()` re-emits the current snapshot for every env);
+ * `setPanelConnected(false)` suspends sanitize+send so a Relay app
+ * loaded in any tab doesn't pay ~1s of main-thread time per
+ * store.publish when nobody's watching. The standalone deploy stays
+ * always-on by leaving the default alone.
  */
 
 type RelayStoreLike = {
@@ -44,19 +47,32 @@ type GlobalWithHook = typeof globalThis & {
 
 export type HookHandle = {
   /**
-   * Re-emit environment.registered for every env currently known to
-   * the hook, plus a store.publish for any env whose current version
-   * doesn't match the panel's recorded version in `knownVersions`.
-   * No-op if no envs have registered.
-   *
-   * The version-aware skip lets reconnects after a service-worker
-   * hibernation cycle avoid re-serializing snapshots that haven't
-   * changed since the panel last saw them.
+   * Re-emit environment.registered + the current store.publish for
+   * every env the hook knows about. No-op if no envs have registered.
+   * Used by the extension deploy when a panel attaches so it doesn't
+   * sit on an empty state until the next publish fires.
    */
-  replay(knownVersions?: Readonly<{ [envId: string]: number }>): void;
+  replay(): void;
+  /**
+   * Toggle whether the hook does any sanitize+send work on
+   * store.publish. The extension flips this off whenever no panel is
+   * watching — Chrome content scripts run on every page, and a full
+   * RecordSource walk per publish on a heavy Relay app is ~1s of
+   * main-thread time we don't want to pay when nobody's listening.
+   *
+   * The version counter still advances while suspended so replay()
+   * emits the latest snapshot when a panel later attaches.
+   *
+   * Defaults to true so the standalone deploy (which has no
+   * panel-presence signal) stays in its always-on mode.
+   */
+  setPanelConnected(connected: boolean): void;
 };
 
-const NOOP_HANDLE: HookHandle = { replay: () => {} };
+const NOOP_HANDLE: HookHandle = {
+  replay: () => {},
+  setPanelConnected: () => {},
+};
 
 let envSeq = 0;
 const envIds = new WeakMap<RelayEnvironmentLike, string>();
@@ -82,12 +98,20 @@ export function installHook(connection: Connection): HookHandle {
   // share a lifetime — there's no leak across page navigations,
   // either, since the whole main-world script reloads with the page.
   const knownEnvs = new Set<RelayEnvironmentLike>();
+  // Default to true so the standalone WS deploy, which has no
+  // panel-presence signal, stays in its always-on mode. The extension
+  // flips this to false right after install and lets the background
+  // service worker drive it from there.
+  let panelConnected = true;
 
   /**
    * Send the current snapshot for `env`. `bumpVersion` is true for
    * fresh store.publish events (the version counter advances); false
    * for replays (we re-emit the same version we last sent so the
    * panel doesn't redundantly process the same data).
+   *
+   * The version bumps even while the panel is disconnected so that
+   * a later replay() correctly emits the current state.
    */
   function emitSnapshot(env: RelayEnvironmentLike, bumpVersion: boolean) {
     const envId = idFor(env);
@@ -96,6 +120,7 @@ export function installHook(connection: Connection): HookHandle {
     const prev = versions.get(envId) ?? 0;
     const version = bumpVersion ? prev + 1 : prev;
     if (bumpVersion) versions.set(envId, version);
+    if (!panelConnected) return;
     connection.send({
       type: 'store.publish',
       envId,
@@ -113,6 +138,10 @@ export function installHook(connection: Connection): HookHandle {
     knownEnvs.add(env);
 
     const envId = idFor(env);
+    // environment.registered is tiny (just an envId); send it
+    // unconditionally so the upstream content port opens and the
+    // background service worker learns this tab has a Relay app even
+    // if the panel isn't watching yet.
     connection.send({ type: 'environment.registered', envId });
 
     const store = env.getStore?.();
@@ -136,21 +165,21 @@ export function installHook(connection: Connection): HookHandle {
   };
 
   return {
-    replay(knownVersions) {
+    replay() {
       for (const env of knownEnvs) {
         const envId = idFor(env);
         connection.send({ type: 'environment.registered', envId });
 
+        // Nothing to send if we've never recorded a publish for this
+        // env (e.g. its store was missing at attach time).
         const current = versions.get(envId) ?? 0;
-        // Nothing to send if we've never published a snapshot for
-        // this env (e.g. its store was missing at attach time).
         if (current === 0) continue;
-        // Panel already has the current version — skip the heavy
-        // sanitize + serialize + send.
-        if (knownVersions?.[envId] === current) continue;
 
         emitSnapshot(env, false);
       }
+    },
+    setPanelConnected(connected) {
+      panelConnected = connected;
     },
   };
 }

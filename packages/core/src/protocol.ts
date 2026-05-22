@@ -39,27 +39,34 @@ export type StorePublish = Readonly<{
 }>;
 
 /**
- * Sent by the inspector UI when it first connects so the core can
- * replay environment.registered + store.publish for any envs that
- * registered before the UI was listening — most commonly the case
- * when DevTools is opened on a page that was already loaded.
+ * Sent to the core (the page-side hook) when a devtools panel is now
+ * watching the inspected tab. Cues the hook to start doing the
+ * expensive sanitize+send work on every store.publish, and to replay
+ * the current snapshot of every known env so the panel doesn't sit on
+ * an empty state until the next publish fires.
  *
- * `knownVersions` is the panel's current view of each env's version,
- * if any. The core uses it to skip re-sending snapshots that haven't
- * changed since the panel last saw them — important on every
- * reconnect after a service-worker hibernation cycle, where the
- * unconditional replay would otherwise re-serialize the entire store
- * even though nothing's moved.
+ * Only emitted by the Chrome-extension deploy, where the background
+ * service worker synthesizes it on the content/panel port-pair
+ * transitions. The standalone WS deploy has no equivalent and stays
+ * always-connected.
  */
-export type PanelHello = Readonly<{
-  type: 'panel.hello';
-  knownVersions?: Readonly<{ [envId: string]: number }>;
+export type PanelConnected = Readonly<{
+  type: 'panel.connected';
+}>;
+
+/**
+ * The mirror of panel.connected: panel went away (closed, or its port
+ * to the background was torn down). The hook suspends sanitize+send
+ * until the next panel.connected.
+ */
+export type PanelGoodbye = Readonly<{
+  type: 'panel.goodbye';
 }>;
 
 /** Messages flowing from the user's app → inspector UI. */
 export type CoreToUi = EnvironmentRegistered | StorePublish;
 
 /** Messages flowing from the inspector UI → user's app. */
-export type UiToCore = PanelHello;
+export type UiToCore = PanelConnected | PanelGoodbye;
 
 export type WireMessage = CoreToUi | UiToCore;

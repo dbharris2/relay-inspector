@@ -4,10 +4,7 @@ import { installHook, type HookHandle } from './hook';
 import type { CoreToUi, StorePublish } from './protocol';
 
 /**
- * Tests for the hook's replay() behavior. Specifically the
- * version-skip logic added so reconnects after a service-worker
- * hibernation don't re-serialize the entire store every cycle when
- * the panel already has the current snapshot.
+ * Tests for the hook's attach, replay, and panel-presence gating.
  *
  * The `__RELAY_DEVTOOLS_HOOK__` slot is reset before every test so
  * each installHook() actually installs rather than no-op'ing. The
@@ -137,13 +134,11 @@ describe('replay', () => {
     expect(conn.sent).toEqual([]);
   });
 
-  it('re-emits environment.registered + store.publish at the current version when no knownVersions is provided', () => {
+  it('re-emits environment.registered + store.publish at the current version', () => {
     const { conn, handle } = setup();
     const env = makeFakeEnv({ 'A:1': { __id: 'A:1', __typename: 'A' } });
     findHook()!.registerEnvironment(env);
-    // Initial attach: registered + publish v1
-    const initial = conn.sent.slice();
-    expect(initial).toHaveLength(2);
+    expect(conn.sent).toHaveLength(2);
     conn.sent.length = 0;
 
     handle.replay();
@@ -157,59 +152,6 @@ describe('replay', () => {
     expect(conn.sent[0]).toMatchObject({ type: 'environment.registered' });
   });
 
-  it('skips store.publish when knownVersions matches the current version', () => {
-    const { conn, handle } = setup();
-    const env = makeFakeEnv({ 'A:1': { __id: 'A:1', __typename: 'A' } });
-    findHook()!.registerEnvironment(env);
-    const registered = conn.sent[0];
-    expect(registered.type).toBe('environment.registered');
-    const envId =
-      registered.type === 'environment.registered' ? registered.envId : '';
-    conn.sent.length = 0;
-
-    handle.replay({ [envId]: 1 });
-
-    // Only the lightweight registered message; publish is skipped.
-    expect(conn.sent).toHaveLength(1);
-    expect(conn.sent[0]).toMatchObject({ type: 'environment.registered' });
-  });
-
-  it('emits store.publish when knownVersions is stale', () => {
-    const { conn, handle } = setup();
-    const env = makeFakeEnv({ 'A:1': { __id: 'A:1', __typename: 'A' } });
-    findHook()!.registerEnvironment(env);
-    env.fireStorePublish(); // bumps to v2
-    env.fireStorePublish(); // bumps to v3
-    const registered = conn.sent[0];
-    const envId =
-      registered.type === 'environment.registered' ? registered.envId : '';
-    conn.sent.length = 0;
-
-    handle.replay({ [envId]: 1 });
-
-    const publish = conn.sent.find(
-      (m): m is StorePublish => m.type === 'store.publish',
-    );
-    expect(publish).toBeDefined();
-    expect(publish!.version).toBe(3);
-  });
-
-  it('emits store.publish when the env is unknown to the panel', () => {
-    const { conn, handle } = setup();
-    const env = makeFakeEnv({ 'A:1': { __id: 'A:1', __typename: 'A' } });
-    findHook()!.registerEnvironment(env);
-    conn.sent.length = 0;
-
-    // Panel has nothing for this env (e.g., it just opened).
-    handle.replay({});
-
-    const publish = conn.sent.find(
-      (m): m is StorePublish => m.type === 'store.publish',
-    );
-    expect(publish).toBeDefined();
-    expect(publish!.version).toBe(1);
-  });
-
   it('does not bump the version counter on a replayed publish', () => {
     const { conn, handle } = setup();
     const env = makeFakeEnv({ 'A:1': { __id: 'A:1', __typename: 'A' } });
@@ -218,10 +160,7 @@ describe('replay', () => {
     const envId =
       registered.type === 'environment.registered' ? registered.envId : '';
 
-    // Replay with stale version → emits another publish, but the next
-    // real store.publish should still be version 2 (not 3 — the replay
-    // didn't advance the counter).
-    handle.replay({});
+    handle.replay();
     conn.sent.length = 0;
     env.fireStorePublish();
 
@@ -234,26 +173,75 @@ describe('replay', () => {
     expect(publish!.version).toBe(2);
     expect(publish!.envId).toBe(envId);
   });
+});
 
-  it('handles multiple envs with a mix of matching and stale versions', () => {
+describe('panel-presence gating', () => {
+  function setup() {
+    const conn = captureConnection();
+    const handle: HookHandle = installHook(conn);
+    return { conn, handle };
+  }
+
+  it('skips store.publish payloads while suspended', () => {
     const { conn, handle } = setup();
-    const env1 = makeFakeEnv({ 'A:1': { __id: 'A:1', __typename: 'A' } });
-    const env2 = makeFakeEnv({ 'B:1': { __id: 'B:1', __typename: 'B' } });
-    findHook()!.registerEnvironment(env1);
-    findHook()!.registerEnvironment(env2);
-    env2.fireStorePublish(); // env2 is now at v2
+    handle.setPanelConnected(false);
+    const env = makeFakeEnv({ 'A:1': { __id: 'A:1', __typename: 'A' } });
+    findHook()!.registerEnvironment(env);
 
-    const env1Id = (conn.sent[0] as { envId: string }).envId;
-    const env2Id = (conn.sent[2] as { envId: string }).envId;
+    // env.registered always goes through (it opens the port and is
+    // tiny); store.publish payloads must NOT — that's the whole point.
+    expect(conn.sent.find((m) => m.type === 'store.publish')).toBeUndefined();
+    expect(
+      conn.sent.find((m) => m.type === 'environment.registered'),
+    ).toBeDefined();
+
+    env.fireStorePublish();
+    env.fireStorePublish();
+    expect(conn.sent.filter((m) => m.type === 'store.publish')).toHaveLength(0);
+  });
+
+  it('still bumps versions while suspended so replay emits the current snapshot', () => {
+    const { conn, handle } = setup();
+    handle.setPanelConnected(false);
+    const env = makeFakeEnv({ 'A:1': { __id: 'A:1', __typename: 'A' } });
+    findHook()!.registerEnvironment(env);
+    env.fireStorePublish();
+    env.fireStorePublish();
     conn.sent.length = 0;
 
-    handle.replay({ [env1Id]: 1 /* matches */, [env2Id]: 1 /* stale */ });
+    handle.setPanelConnected(true);
+    handle.replay();
 
-    const publishes = conn.sent.filter(
+    const publish = conn.sent.find(
       (m): m is StorePublish => m.type === 'store.publish',
     );
-    expect(publishes).toHaveLength(1);
-    expect(publishes[0]!.envId).toBe(env2Id);
-    expect(publishes[0]!.version).toBe(2);
+    expect(publish).toBeDefined();
+    // attach() = v1, two fireStorePublish() = v2, v3.
+    expect(publish!.version).toBe(3);
+  });
+
+  it('resumes sending when reconnected and skips again after another goodbye', () => {
+    const { conn, handle } = setup();
+    handle.setPanelConnected(false);
+    const env = makeFakeEnv({ 'A:1': { __id: 'A:1', __typename: 'A' } });
+    findHook()!.registerEnvironment(env);
+    conn.sent.length = 0;
+
+    handle.setPanelConnected(true);
+    env.fireStorePublish();
+    expect(conn.sent.filter((m) => m.type === 'store.publish')).toHaveLength(1);
+
+    conn.sent.length = 0;
+    handle.setPanelConnected(false);
+    env.fireStorePublish();
+    expect(conn.sent.filter((m) => m.type === 'store.publish')).toHaveLength(0);
+  });
+
+  it('defaults to connected so the standalone deploy is unaffected', () => {
+    const { conn } = setup();
+    const env = makeFakeEnv({ 'A:1': { __id: 'A:1', __typename: 'A' } });
+    findHook()!.registerEnvironment(env);
+    // Initial publish goes out without anyone calling setPanelConnected.
+    expect(conn.sent.filter((m) => m.type === 'store.publish')).toHaveLength(1);
   });
 });

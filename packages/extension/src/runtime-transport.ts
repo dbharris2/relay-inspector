@@ -10,7 +10,10 @@ import type { IncomingTransport } from '@relay-inspector/ui/transport';
  *
  * Opens a long-lived port to the service worker, named with the
  * inspected tab id so the worker can pair us with the content script
- * for the same tab.
+ * for the same tab. The background synthesizes a panel.connected
+ * message into the content port on pairing, which makes the main-world
+ * hook resume sanitize+send and replay current state — the panel
+ * doesn't have to send anything to trigger it.
  *
  * The port disconnects whenever Chrome tears the service worker down
  * (MV3 hibernates idle workers after ~30s) — we reconnect on a 1s
@@ -57,22 +60,6 @@ export function createRuntimeTransport(): IncomingTransport {
           handler.onStatus('closed');
           scheduleRetry();
         });
-
-        // Ask the page to replay any environments that registered
-        // before we connected — that's the common path when DevTools
-        // is opened on a page that's already loaded. Reconnects after
-        // service-worker hibernation also re-handshake; sending the
-        // panel's current known versions lets the core skip envs
-        // whose snapshot hasn't moved.
-        try {
-          port.postMessage({
-            type: 'panel.hello',
-            knownVersions: handler.getKnownVersions?.(),
-          });
-        } catch {
-          // Port can die immediately on reconnect storms; the
-          // onDisconnect handler above schedules a retry.
-        }
       };
 
       connect();

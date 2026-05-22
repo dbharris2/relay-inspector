@@ -145,8 +145,8 @@ populates the inspector — no manual page reload required.
   service worker between messages on idle pages. The panel reconnects
   on a 1 s backoff and the content script reopens its port lazily, so
   this is mostly invisible — if the panel goes quiet for a minute after
-  no activity, the next event from the page (or the next reconnect's
-  panel.hello) wakes the chain back up.
+  no activity, the next event from the page wakes the chain back up
+  and the background re-emits panel.connected to resume the hook.
 
 ## Using it (standalone)
 

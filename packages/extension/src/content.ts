@@ -1,24 +1,20 @@
 /**
  * Content script (isolated world). Bridges the page's main world (where
  * main-world.ts installs the Relay hook) and the extension's service
- * worker in both directions:
+ * worker over a single long-lived chrome.runtime.Port:
  *
- *   - Upstream:   window.postMessage from main-world  →  long-lived
- *                 chrome.runtime.Port to the service worker.
- *   - Downstream: chrome.runtime.onMessage from the service worker  →
+ *   - Upstream:   window.postMessage from main-world  →  port.postMessage
+ *                 to the service worker.
+ *   - Downstream: port.onMessage from the service worker  →
  *                 window.postMessage into the page so main-world can
- *                 react (today: replay envs on panel.hello).
+ *                 react to panel.connected / panel.goodbye.
  *
- * Two channels rather than one bidirectional port because the upstream
- * port is opened lazily — most tabs the extension matches aren't Relay
- * apps and we don't want to keep the service worker awake for them.
- * The downstream channel uses one-shot chrome.runtime.onMessage which
- * doesn't require an open port; the service worker dispatches via
- * chrome.tabs.sendMessage.
- *
- * The upstream port reopens on demand if the service worker hibernates
- * between events. A single retry covers the case where the cached port
- * has just been invalidated by a wakeup.
+ * The port is opened lazily — most tabs the extension matches aren't
+ * Relay apps and we don't want to keep the service worker awake for
+ * them. If the worker hibernates between events the port disconnects;
+ * we reopen on the next upstream send. We also tell main-world about
+ * the disconnect so it suspends its hook until the next panel.connected
+ * arrives through the fresh port.
  */
 import {
   DOWNSTREAM_TAG,
@@ -30,10 +26,26 @@ import type { UiToCore } from '@relay-inspector/core/protocol';
 
 let port: chrome.runtime.Port | null = null;
 
+function emitDownstream(msg: UiToCore): void {
+  const envelope: DownstreamEnvelope = {
+    __relay_inspector_down__: DOWNSTREAM_TAG,
+    msg,
+  };
+  window.postMessage(envelope, '*');
+}
+
 function openPort(): chrome.runtime.Port {
   const fresh = chrome.runtime.connect({ name: 'content' });
+  fresh.onMessage.addListener((msg) => {
+    emitDownstream(msg as UiToCore);
+  });
   fresh.onDisconnect.addListener(() => {
     if (port === fresh) port = null;
+    // Whatever the panel-presence state was, we no longer have a route
+    // to learn about it. Suspend the hook; if a panel is still
+    // watching, the background will send panel.connected once we
+    // reopen the port on the next upstream send.
+    emitDownstream({ type: 'panel.goodbye' });
   });
   return fresh;
 }
@@ -62,14 +74,4 @@ window.addEventListener('message', (event: MessageEvent) => {
   if (event.source !== window) return;
   if (!isUpstreamEnvelope(event.data)) return;
   sendUpstream(event.data);
-});
-
-chrome.runtime.onMessage.addListener((msg, sender) => {
-  // Only accept messages from our own extension's service worker.
-  if (sender.id !== chrome.runtime.id) return;
-  const envelope: DownstreamEnvelope = {
-    __relay_inspector_down__: DOWNSTREAM_TAG,
-    msg: msg as UiToCore,
-  };
-  window.postMessage(envelope, '*');
 });

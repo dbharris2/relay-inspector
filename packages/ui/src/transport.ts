@@ -8,14 +8,6 @@ export type ConnectionStatus = 'connecting' | 'open' | 'closed';
 export type TransportHandler = {
   onMessage(msg: CoreToUi): void;
   onStatus(status: ConnectionStatus): void;
-  /**
-   * Snapshot of the panel's current env-version map, returned at the
-   * moment a transport needs to compose its hello (only used by
-   * transports that perform a handshake on connect — currently
-   * chrome.runtime). Lets the producer skip re-sending snapshots the
-   * panel already has. WebSocket transport ignores this.
-   */
-  getKnownVersions?(): Readonly<{ [envId: string]: number }>;
 };
 
 /**

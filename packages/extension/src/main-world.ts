@@ -11,10 +11,11 @@
  * (isolated world, same page) picks them up and forwards them to the
  * service worker and onward to the devtools panel.
  *
- * We also listen for `panel.hello` coming downstream (panel was just
- * opened on a page that already has registered envs) and replay each
- * env's registration + current snapshot so the panel doesn't sit on
- * an empty state until the next store.publish fires.
+ * Because content scripts inject into every page, we start the hook
+ * suspended and let the background service worker tell us via
+ * panel.connected / panel.goodbye when a devtools panel is actually
+ * watching. That gates the expensive RecordSource sanitize off
+ * unless someone's listening.
  */
 import { installHook } from '@relay-inspector/core/hook';
 import type { CoreToUi } from '@relay-inspector/core/protocol';
@@ -24,7 +25,7 @@ import {
   type UpstreamEnvelope,
 } from './envelope';
 
-const { replay } = installHook({
+const handle = installHook({
   send(msg: CoreToUi) {
     const envelope: UpstreamEnvelope = {
       __relay_inspector_up__: UPSTREAM_TAG,
@@ -33,12 +34,16 @@ const { replay } = installHook({
     window.postMessage(envelope, '*');
   },
 });
+handle.setPanelConnected(false);
 
 window.addEventListener('message', (event: MessageEvent) => {
   if (event.source !== window) return;
   if (!isDownstreamEnvelope(event.data)) return;
   const msg = event.data.msg;
-  if (msg.type === 'panel.hello') {
-    replay(msg.knownVersions);
+  if (msg.type === 'panel.connected') {
+    handle.setPanelConnected(true);
+    handle.replay();
+  } else if (msg.type === 'panel.goodbye') {
+    handle.setPanelConnected(false);
   }
 });

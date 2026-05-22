@@ -163,12 +163,3 @@ it loads but never connects. The extension deploy doesn't need either.
   Put it as early as possible in your HTML (`<head>` is safest).
 - **Mixed content.** Loading `http://localhost:8097` from an `https://`
   page is blocked by browsers. Use plain `http` in dev.
-
-## Contributing
-
-Direct pushes to `main` are blocked by branch protection — work on a
-feature branch and open a PR. CI (`.github/workflows/ci.yml`) runs
-typecheck, tests, lint, format check, build, and the real-Relay
-integration check on every PR and every push to `main`.
-
-See **`AGENTS.md`** for the full contributor / agent guide.

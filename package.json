@@ -20,7 +20,6 @@
     "build:core": "vite build --config vite.core.config.ts",
     "build:extension": "vite build --config extension/vite.config.ts",
     "dev:extension": "vite --config extension/vite.config.ts",
-    "package:extension": "tsx scripts/package-extension.ts",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",

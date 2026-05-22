@@ -90,9 +90,18 @@ pnpm build:extension    # Chrome extension only → dist/extension/
 
 ## Using it (Chrome extension)
 
+For developers building from source:
+
 1. `pnpm install && pnpm build:extension`.
 2. Open `chrome://extensions`, enable **Developer mode**.
 3. Click **Load unpacked**, pick `dist/extension/`.
+
+For anyone else — grab a pre-built `.zip` from the latest
+[GitHub release](https://github.com/dbharris2/relay-inspector/releases),
+unzip it, and load that folder as unpacked.
+
+Then:
+
 4. Open DevTools on any page running Relay. The **Relay Inspector**
    tab shows up in the DevTools tab strip (in the `»` overflow if too
    many panels are installed).

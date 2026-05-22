@@ -62,6 +62,30 @@ Direct pushes to `main` are blocked. To land changes:
    the PR ("Merge without waiting for requirements"). That's the
    intended escape hatch for solo work.
 
+## Releases
+
+Every push to `main` runs `.github/workflows/release.yml`, which:
+
+1. Walks commits since the latest `v*` tag and picks a semver bump from
+   their conventional-commit prefixes (`feat:` → minor, anything else
+   → patch, `!`-suffix or `BREAKING CHANGE` → major). No new commits
+   since the last tag → workflow exits early, no release.
+2. Creates a GitHub release tagged `vX.Y.Z` with auto-generated notes.
+3. Builds the extension, **patches the version in
+   `dist/extension/manifest.json` to match the release tag**, zips
+   `dist/extension/` (manifest at zip root, not nested), and uploads
+   it as a release asset named `relay-inspector-vX.Y.Z.zip`.
+
+The source `extension/manifest.json` version is intentionally a
+placeholder (`0.0.0` or the most recent manually-shipped version); CI
+overrides it on the build artifact. Don't bother bumping the source
+manifest by hand — only the release tag and the asset's manifest are
+load-bearing.
+
+To ship a Chrome Web Store update: download the zip from the latest
+release page and upload it to the
+[Web Store dev console](https://chrome.google.com/webstore/devconsole).
+
 ## Quality gates (must pass before committing)
 
 ```sh

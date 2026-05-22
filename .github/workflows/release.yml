@@ -97,7 +97,7 @@ jobs:
           # shipped zip matches the GitHub release tag.
           node -e "
             const fs = require('fs');
-            const path = 'dist/extension/manifest.json';
+            const path = 'packages/extension/dist/manifest.json';
             const m = JSON.parse(fs.readFileSync(path, 'utf8'));
             m.version = process.env.NEW_VERSION;
             fs.writeFileSync(path, JSON.stringify(m, null, 2) + '\n');
@@ -108,10 +108,11 @@ jobs:
         env:
           NEW_VERSION: ${{ needs.release.outputs.new_version }}
         run: |
-          # Zip from inside dist/extension so manifest.json lives at
-          # the zip root, not nested — Web Store rejects nested zips.
-          cd dist/extension
-          zip -r "../../relay-inspector-v${NEW_VERSION}.zip" .
+          # Zip from inside packages/extension/dist so manifest.json
+          # lives at the zip root, not nested — Web Store rejects
+          # nested zips.
+          cd packages/extension/dist
+          zip -r "${GITHUB_WORKSPACE}/relay-inspector-v${NEW_VERSION}.zip" .
 
       - name: Upload to release
         env:

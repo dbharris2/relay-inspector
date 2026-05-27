@@ -87,6 +87,24 @@ describe('installHook', () => {
     // Calling replay on the no-op handle is safe and does nothing.
     expect(() => second.replay()).not.toThrow();
   });
+
+  it('bails out when another devtools extension already owns the hook slot', () => {
+    // The official relayjs/relay-devtools extension installs
+    // __RELAY_DEVTOOLS_HOOK__ as a getter-only property descriptor on
+    // window. If a user has both extensions enabled, plain assignment
+    // here would throw TypeError in strict mode and break the page.
+    // hasOwnProperty matches the gate the official extension uses to
+    // detect us; we mirror it.
+    Object.defineProperty(globalThis, '__RELAY_DEVTOOLS_HOOK__', {
+      get: () => ({ registerEnvironment: () => {} }),
+      configurable: true,
+    });
+    const conn = captureConnection();
+    expect(() => installHook(conn)).not.toThrow();
+    expect(conn.sent).toEqual([]);
+    delete (globalThis as { __RELAY_DEVTOOLS_HOOK__?: unknown })
+      .__RELAY_DEVTOOLS_HOOK__;
+  });
 });
 
 describe('attach via registerEnvironment', () => {

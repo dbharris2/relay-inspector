@@ -88,7 +88,15 @@ function idFor(env: RelayEnvironmentLike): string {
 
 export function installHook(connection: Connection): HookHandle {
   const g = globalThis as GlobalWithHook;
-  if (g.__RELAY_DEVTOOLS_HOOK__?.isInjected) return NOOP_HANDLE;
+  // Bail if anything already owns the slot. The official relay-devtools
+  // extension (relayjs/relay-devtools) installs its hook as a
+  // getter-only property descriptor, so a plain assignment would throw
+  // TypeError in strict mode and bubble out of main-world.ts as an
+  // uncaught error, breaking the page. `hasOwnProperty` matches the
+  // same gate the official extension uses to detect us.
+  if (Object.prototype.hasOwnProperty.call(g, '__RELAY_DEVTOOLS_HOOK__')) {
+    return NOOP_HANDLE;
+  }
 
   const versions = new Map<string, number>();
   // Iterable mirror of `envIds` so replay() can walk every env.
@@ -159,10 +167,19 @@ export function installHook(connection: Connection): HookHandle {
     };
   }
 
-  g.__RELAY_DEVTOOLS_HOOK__ = {
-    isInjected: true,
-    registerEnvironment: attach,
-  };
+  try {
+    g.__RELAY_DEVTOOLS_HOOK__ = {
+      isInjected: true,
+      registerEnvironment: attach,
+    };
+  } catch {
+    // Some sites lock `__RELAY_DEVTOOLS_HOOK__` down (e.g. with a
+    // getter-only property descriptor on `window`) to block devtools
+    // injection. Plain assignment throws TypeError in strict mode and
+    // would otherwise escape main-world.ts as an uncaught error,
+    // breaking the page. Bail out as a no-op and leave the page alone.
+    return NOOP_HANDLE;
+  }
 
   return {
     replay() {
